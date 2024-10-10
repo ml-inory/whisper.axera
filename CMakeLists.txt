@@ -1,0 +1,25 @@
+cmake_minimum_required(VERSION 3.13 FATAL_ERROR)
+project(whisper)
+
+set(CMAKE_CXX_STANDARD 14)
+
+if (CMAKE_BUILD_TYPE MATCHES Debug)
+    set(CMAKE_CXX_FLAGS "-fvisibility=hidden -g -O0")
+    add_definitions(-D__AX_SKEL_DEBUG__)
+elseif (CMAKE_BUILD_TYPE MATCHES Release)
+    set(CMAKE_CXX_FLAGS "-fvisibility=hidden -O2 -fdata-sections -ffunction-sections")
+endif()
+
+include(cmake/msp_dependencies.cmake)
+
+include_directories(${MSP_INC_DIR})
+link_directories(${MSP_LIB_DIR})
+
+include_directories(src)
+aux_source_directory(src SRC)
+add_executable(whisper whisper.cpp ${SRC})
+target_link_libraries(whisper ${MSP_LIBS})
+
+install(TARGETS whisper
+        RUNTIME
+            DESTINATION bin)
