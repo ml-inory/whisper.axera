@@ -25,6 +25,7 @@
 #include <vector>
 #include <complex>
 #include <iostream>
+#include <cmath>
 
 ///
 /// \brief c++ implemention of librosa
@@ -150,7 +151,7 @@ static Matrixf melspectrogram(Vectorf &x, int sr, int n_fft, int n_hop,
   Matrixf mel_basis = melfilter(sr, n_fft, n_mels, fmin, fmax);
   Matrixf sp = spectrogram(X, power);
   Matrixf mel = mel_basis*sp.transpose();
-  return mel;
+  return mel.transpose();
 }
 
 static Matrixf power2db(Matrixf& x) {
@@ -167,8 +168,8 @@ static Matrixf dct(Matrixf& x, bool norm, int type) {
   Matrixf dct = x*coeff.transpose();
   // ortho
   if (norm) {
-    Vectorf ortho = Vectorf::Constant(N, std::sqrtf(0.5f/N));
-    ortho[0] = std::sqrtf(0.25f/N);
+    Vectorf ortho = Vectorf::Constant(N, sqrtf(0.5f/N));
+    ortho[0] = sqrtf(0.25f/N);
     dct = dct*ortho.asDiagonal();
   }
   return dct;

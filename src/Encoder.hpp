@@ -10,15 +10,16 @@
 
 #pragma once
 
+#include <vector>
 #include "EngineWrapper.hpp"
 
 struct EncoderData {
     // Input
-    float* mel;
+    std::vector<float> mel;
     
     // Output
-    float* n_layer_cross_k;
-    float* n_layer_cross_v;
+    std::vector<float> n_layer_cross_k;
+    std::vector<float> n_layer_cross_v;
 };
 
 class Encoder : public EngineWrapper {
@@ -26,16 +27,16 @@ public:
     Encoder() = default;
     ~Encoder() = default;
 
-    int PrepareData(EncoderData* data) {
-        data->mel = new float[GetInputSize(0) / sizeof(float)];
-        data->n_layer_cross_k = new float[GetOutputSize(0) / sizeof(float)];
-        data->n_layer_cross_v = new float[GetOutputSize(1) / sizeof(float)];
+    int PrepareData(EncoderData& data) {
+        data.mel.resize(GetInputSize(0) / sizeof(float));
+        data.n_layer_cross_k.resize(GetOutputSize(0) / sizeof(float));
+        data.n_layer_cross_v.resize(GetOutputSize(1) / sizeof(float));
         return 0;
     }
 
-    int Run(EncoderData* data) {
+    int Run(EncoderData& data) {
         int ret = 0;
-        ret = SetInput((uint8_t*)data->mel, 0);
+        ret = SetInput((uint8_t*)data.mel.data(), 0);
         if (ret) {
             return ret;
         }
@@ -45,22 +46,16 @@ public:
             return ret;
         }
 
-        ret = GetOutput((uint8_t*)data->n_layer_cross_k, 0);
+        ret = GetOutput((uint8_t*)data.n_layer_cross_k.data(), 0);
         if (ret) {
             return ret;
         }
 
-        ret = GetOutput((uint8_t*)data->n_layer_cross_v, 1);
+        ret = GetOutput((uint8_t*)data.n_layer_cross_v.data(), 1);
         if (ret) {
             return ret;
         }
 
         return ret;
-    }
-
-    void DestroyData(EncoderData* data) {
-        delete[] data->mel;
-        delete[] data->n_layer_cross_k;
-        delete[] data->n_layer_cross_v;
     }
 };

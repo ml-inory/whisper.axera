@@ -480,7 +480,7 @@ namespace utils {
     static inline AX_S32 push_io_output(uint8_t* output,
                                         int index,
                                         AX_ENGINE_IO_T& io) {
-        AX_ENGINE_IO_BUFFER_T* pImg = &io.pOoutputs[index];
+        AX_ENGINE_IO_BUFFER_T* pImg = &io.pOutputs[index];
         cache_io_flush(pImg);
         memcpy(output, pImg->pVirAddr, pImg->nSize);
         return 0;
