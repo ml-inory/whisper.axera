@@ -29,7 +29,7 @@
 #define WHISPER_TRANSCRIBE  50359
 #define WHISPER_VOCAB_SIZE  51865
 #define WHISPER_N_TEXT_CTX  448
-#define WHISPER_N_TEXT_STATE 384
+#define WHISPER_N_TEXT_STATE 768
 
 #define NEG_INF             -std::numeric_limits<float>::infinity()
 
