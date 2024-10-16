@@ -1,0 +1,11 @@
+prefix=/home/yrz/Codes/OpenCC/build/install
+exec_prefix=${prefix}
+libdir=/home/yrz/Codes/OpenCC/build/install/lib
+includedir=/home/yrz/Codes/OpenCC/build/install/include
+
+Name: opencc
+Description: Open Chinese Convert
+Version: 1.1.9
+Requires:
+Libs: -L${libdir} -lopencc
+Cflags: -I${includedir}/opencc

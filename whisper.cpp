@@ -12,6 +12,7 @@
 #include "DecoderMain.hpp"
 #include "DecoderLoop.hpp"
 #include "base64.h"
+#include "opencc.h"
 
 #define WHISPER_SAMPLE_RATE 16000
 #define WHISPER_N_FFT       400
@@ -133,7 +134,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    n_len = 3000;
+    n_len = mel[0].size();
 
     // fp = fopen("../mel.bin", "rb");
     // for (size_t i = 0; i < mel.size(); i++) {
@@ -295,7 +296,10 @@ int main(int argc, char** argv) {
         base64_decode((const uint8*)token_tables[i].c_str(), (uint32)token_tables[i].size(), str);
         s += str;
     }
-    printf("Result: %s\n", s.c_str());
+
+    const opencc::SimpleConverter converter("t2s.json");
+    std::string simple_str = converter.Convert(s);
+    printf("Result: %s\n", simple_str.c_str());
 
     return 0;
 }

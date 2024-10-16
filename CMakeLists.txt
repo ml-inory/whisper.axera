@@ -12,13 +12,21 @@ endif()
 
 include(cmake/msp_dependencies.cmake)
 
+# OpenCC for 简繁转换
+include_directories(opencc/include/opencc)
+link_directories(opencc/lib)
+
 include_directories(${MSP_INC_DIR})
 link_directories(${MSP_LIB_DIR})
 
 include_directories(src)
 aux_source_directory(src SRC)
 add_executable(whisper whisper.cpp ${SRC})
-target_link_libraries(whisper ${MSP_LIBS})
+target_link_libraries(whisper ${MSP_LIBS} opencc marisa)
+
+file(COPY ${CMAKE_SOURCE_DIR}/opencc/share/opencc/t2s.json DESTINATION ${CMAKE_BINARY_DIR})
+file(COPY ${CMAKE_SOURCE_DIR}/opencc/share/opencc/TSPhrases.ocd2 DESTINATION ${CMAKE_BINARY_DIR})
+file(COPY ${CMAKE_SOURCE_DIR}/opencc/share/opencc/TSCharacters.ocd2 DESTINATION ${CMAKE_BINARY_DIR})
 
 install(TARGETS whisper
         RUNTIME
