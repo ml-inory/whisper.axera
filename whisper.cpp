@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <fstream>
 #include <ax_sys_api.h>
+#include <unordered_map>
 
 #include "cmdline.hpp"
 #include "AudioFile.h"
@@ -29,9 +30,12 @@
 #define WHISPER_TRANSCRIBE  50359
 #define WHISPER_VOCAB_SIZE  51865
 #define WHISPER_N_TEXT_CTX  448
-#define WHISPER_N_TEXT_STATE 768
-
 #define NEG_INF             -std::numeric_limits<float>::infinity()
+
+static std::unordered_map<std::string, int> WHISPER_N_TEXT_STATE_MAP{
+    {"tiny",    384},
+    {"small",   768}
+};
 
 static std::vector<int32_t> SOT_SEQUENCE{WHISPER_SOT,50260,WHISPER_TRANSCRIBE,WHISPER_NO_TIMESTAMPS};
 
@@ -60,8 +64,9 @@ int main(int argc, char** argv) {
     cmd.add<std::string>("decoder_main", 'm', "decoder_main axmodel", true, "");
     cmd.add<std::string>("decoder_loop", 'l', "decoder_loop axmodel", true, "");
     cmd.add<std::string>("position_embedding", 'p', "position_embedding.bin", true, "");
-    cmd.add<std::string>("token", 't', "tokens txt", true, "");
+    cmd.add<std::string>("token", 't', "tokens txt", false, "small-tokens.txt");
     cmd.add<std::string>("wav", 'w', "wav file", true, "");
+    cmd.add<std::string>("model_type", 0, "tiny, small, large", false, "small");
     cmd.parse_check(argc, argv);
 
     // 0. get app args, can be removed from user's app
@@ -71,6 +76,14 @@ int main(int argc, char** argv) {
     auto pe_file = cmd.get<std::string>("position_embedding");
     auto token_file = cmd.get<std::string>("token");
     auto wav_file = cmd.get<std::string>("wav");
+    auto model_type = cmd.get<std::string>("model_type");
+
+    if (WHISPER_N_TEXT_STATE_MAP.find(model_type) == WHISPER_N_TEXT_STATE_MAP.end()) {
+        fprintf(stderr, "Can NOT find n_text_state for model_type: %s\n", model_type.c_str());
+        return -1;
+    }
+
+    int WHISPER_N_TEXT_STATE = WHISPER_N_TEXT_STATE_MAP[model_type];
 
     int ret = AX_SYS_Init();
     if (0 != ret) {
@@ -98,13 +111,22 @@ int main(int argc, char** argv) {
     auto& samples = audio_file.samples[0];
     int n_samples = samples.size();
 
+    printf("Read positional_embedding\n");
     std::vector<float> positional_embedding(WHISPER_N_TEXT_CTX * WHISPER_N_TEXT_STATE);
     FILE* fp = fopen(pe_file.c_str(), "rb");
+    if (!fp) {
+        fprintf(stderr, "Can NOT open %s\n", pe_file.c_str());
+        return -1;
+    }
     fread(positional_embedding.data(), sizeof(float), WHISPER_N_TEXT_CTX * WHISPER_N_TEXT_STATE, fp);
     fclose(fp);
 
     std::vector<std::string> token_tables;
     std::ifstream ifs(token_file);
+    if (!ifs.is_open()) {
+        fprintf(stderr, "Can NOT open %s\n", token_file.c_str());
+        return -1;
+    }
     std::string line;
     while (std::getline(ifs, line)) {
         size_t i = line.find(' ');
