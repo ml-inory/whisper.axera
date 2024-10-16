@@ -64,9 +64,9 @@ int main(int argc, char** argv) {
     cmd.add<std::string>("decoder_main", 'm', "decoder_main axmodel", true, "");
     cmd.add<std::string>("decoder_loop", 'l', "decoder_loop axmodel", true, "");
     cmd.add<std::string>("position_embedding", 'p', "position_embedding.bin", true, "");
-    cmd.add<std::string>("token", 't', "tokens txt", false, "small-tokens.txt");
+    cmd.add<std::string>("token", 't', "tokens txt", true, "small-tokens.txt");
     cmd.add<std::string>("wav", 'w', "wav file", true, "");
-    cmd.add<std::string>("model_type", 0, "tiny, small, large", false, "small");
+    cmd.add<std::string>("model_type", 0, "tiny, small, large", true, "small");
     cmd.parse_check(argc, argv);
 
     // 0. get app args, can be removed from user's app
