@@ -1,0 +1,54 @@
+{
+    "model_type": "ONNX",
+    "npu_mode": "NPU3",
+    "quant": {
+      "input_configs": [
+        {
+          "tensor_name": "tokens",
+          "calibration_dataset": "/home/yrz/Codes/sherpa-onnx/scripts/whisper/calibrations_small/decoder_main/tokens.tar.gz",
+          "calibration_size": -1,
+          "calibration_format": "Numpy"
+        },
+        {
+          "tensor_name": "n_layer_cross_k",
+          "calibration_dataset": "/home/yrz/Codes/sherpa-onnx/scripts/whisper/calibrations_small/decoder_main/n_layer_cross_k.tar.gz",
+          "calibration_size": -1,
+          "calibration_format": "Numpy"
+        },
+        {
+          "tensor_name": "n_layer_cross_v",
+          "calibration_dataset": "/home/yrz/Codes/sherpa-onnx/scripts/whisper/calibrations_small/decoder_main/n_layer_cross_v.tar.gz",
+          "calibration_size": -1,
+          "calibration_format": "Numpy"
+        }
+      ],
+      "layer_configs": [
+        {
+          "start_tensor_names": ["DEFAULT"],
+          "end_tensor_names": ["DEFAULT"],
+          "data_type": "U16"
+        },
+        {
+          "op_types": ["Gather"],
+          "data_type": "FP32"
+        },
+        {
+          "layer_names": ["/Add_1", "/Add_5", "/Add_9", "/Add_13"],
+          "data_type": "FP32"
+        },
+        {
+          "layer_names": ["/Softmax", "/Softmax_2", "/Softmax_4", "/Softmax_6"],
+          "data_type": "FP32"
+        }
+      ],
+      "calibration_method": "MinMax"
+    },
+    "input_processors": [
+      {
+        "tensor_name": "DEFAULT"
+      }
+    ],
+    "compiler": {
+      "check": 2
+    }
+  }

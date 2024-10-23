@@ -1,0 +1,30 @@
+{
+    "model_type": "ONNX",
+    "npu_mode": "NPU3",
+    "quant": {
+      "input_configs": [
+        {
+          "tensor_name": "mel",
+          "calibration_dataset": "/home/yrz/Codes/sherpa-onnx/scripts/whisper/calibrations_small/encoder/mel.tar.gz",
+          "calibration_size": -1,
+          "calibration_format": "Numpy"
+        }
+      ],
+      "layer_configs": [
+        {
+          "start_tensor_names": ["DEFAULT"],
+          "end_tensor_names": ["DEFAULT"],
+          "data_type": "U16"
+        }
+      ],
+      "calibration_method": "MinMax"
+    },
+    "input_processors": [
+      {
+        "tensor_name": "mel"
+      }
+    ],
+    "compiler": {
+      "check": 3
+    }
+  }

@@ -8,7 +8,7 @@ OpenAI Whisper demo on Axera
 
 ## Run
 
-```./whisper --model_type tiny -e ../tiny-encoder.axmodel -m ../tiny-decoder-main.axmodel -l ../tiny-decoder-loop.axmodel -w ../aishell_S0764/BAC009S0764W0124.wav  -p ../tiny-positional_embedding.bin -t ../tiny-tokens.txt```
+```./whisper --model_type small -e ../small-encoder.axmodel -m ../small-decoder-main.axmodel -l ../small-decoder-loop.axmodel -w ../BAC009S0764W0124.wav  -p ../small-positional_embedding.bin -t ../small-tokens.txt```
 
 
 ## Latency
@@ -24,3 +24,6 @@ OpenAI Whisper demo on Axera
 
 ## Converted Model
 [Baidu](https://pan.baidu.com/s/1tOHVMZCin0A68T5HmKRJyg?pwd=axyz)
+
+
+## [How to convert model](/doc/convert.md)
