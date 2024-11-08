@@ -141,10 +141,10 @@ def main():
     mel = compute_feature(wav_path, n_mels=WHISPER_N_MELS)
 
     # Run encoder
-    n_layer_cross_k, n_layer_cross_v = encoder.run(None, input_feed={"mel": mel})
+    n_layer_cross_k, n_layer_cross_v = encoder.run(input_feed={"mel": mel})
 
     # Run decoder_main
-    logits, n_layer_self_k_cache, n_layer_self_v_cache = decoder_main.run(None, input_feed={
+    logits, n_layer_self_k_cache, n_layer_self_v_cache = decoder_main.run(input_feed={
         "tokens": SOT_SEQUENCE,
         "n_layer_cross_k": n_layer_cross_k,
         "n_layer_cross_v": n_layer_cross_v
@@ -170,7 +170,7 @@ def main():
         mask[: WHISPER_N_TEXT_CTX - offset - 1] = NEG_INF
 
         # Run decoder_loop
-        logits, n_layer_self_k_cache, n_layer_self_v_cache = decoder_loop.run(None, input_feed={
+        logits, n_layer_self_k_cache, n_layer_self_v_cache = decoder_loop.run(input_feed={
             "tokens": np.array([output_tokens[-1]], dtype=np.int32),
             "in_n_layer_self_k_cache": n_layer_self_k_cache,
             "in_n_layer_self_v_cache": n_layer_self_v_cache,
