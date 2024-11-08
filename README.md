@@ -8,13 +8,33 @@ OpenAI Whisper demo on Axera
 ### [自行转换模型指导](/model_convert/README.md)
 
 ## Python
+### Requirements
+```apt-get install libsndfile1-dev```  
+```mkdir /opt/site-packages```  
+```pip3 install -r requirements.txt --prefix=/opt/site-packages```  
+
+将这两行放到/root/.bashrc  
+(实际添加的路径需要自行检查)
+```export PYTHONPATH=$PYTHONPATH:/opt/site-packages/local/lib/python3.10/dist-packages```  
+```export PATH=$PATH:/opt/site-packages/local/bin```  
+ 重新连接终端
+
+### 运行
+```cd python```  
+```python3 whisper.py --wav demo.wav```  
+
+### 示例
+
 
 ## C++
 
 ### 编译
 
-```./download_bsp.sh```  
-```./build.sh```
+```
+cd cpp
+./download_bsp.sh
+./build.sh
+```
 
 ### 运行
 
