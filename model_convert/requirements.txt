@@ -1,0 +1,4 @@
+openai-whisper==20231117
+onnx
+onnx-simplifier
+torch

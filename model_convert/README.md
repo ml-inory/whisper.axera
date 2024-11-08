@@ -1,9 +1,6 @@
 # 模型转换
 
-我们将基于[sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)进行模型转换
-
-
-## 安装sherpa-onnx
+## Requirements
 （下面的步骤建议在Python虚拟环境下进行，可跳过）  
 ```
 conda create -n whisper python=3.9
@@ -11,13 +8,11 @@ conda activate whisper
 ```
 
 ```
-git clone https://github.com/k2-fsa/sherpa-onnx --depth=1
-cd sherpa-onnx
-python setup.py install
+cd model_convert
+pip install -r requirements.txt
 ```
 
 ## 导出ONNX
-拷贝whisper文件夹下的所有文件到sherpa-onnx/scripts/whisper下  
 目前只支持导出tiny或small的模型，请根据需要选择
 
 导出tiny模型

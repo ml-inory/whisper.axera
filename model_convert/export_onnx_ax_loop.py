@@ -21,7 +21,7 @@ from typing import Any, Dict, Optional
 import onnx
 import torch
 import torch.nn.functional as F
-from onnxruntime.quantization import QuantType, quantize_dynamic
+# from onnxruntime.quantization import QuantType, quantize_dynamic
 from torch import Tensor, nn
 
 import whisper
@@ -369,7 +369,7 @@ def main():
     print(args)
     print(name)
 
-    opset_version = 13
+    opset_version = 17
 
     if name == "distil-medium.en":
         filename = "./distil-medium-en-original-model.bin"
