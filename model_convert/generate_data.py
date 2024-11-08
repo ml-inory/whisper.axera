@@ -73,6 +73,18 @@ def get_args():
         default="./datasets/aishell_S0764",
         help="Path to the test wave",
     )
+
+    parser.add_argument(
+        "--max_num",
+        type=int,
+        default=5,
+        help="Maximum num of data",
+    )
+
+    parser.add_argument(
+        "--save_report",
+        action="store_true"
+    )
     return parser.parse_args()
 
 
@@ -292,11 +304,11 @@ def compute_features(filename: str, dim: int = 80) -> torch.Tensor:
       Return a 1-D float32 tensor of shape (1, 80, 3000) containing the features.
     """
     wave, sample_rate = load_audio(filename)
-    if sample_rate != 16000:
-        import librosa
+    # if sample_rate != 16000:
+    #     import librosa
 
-        wave = librosa.resample(wave, orig_sr=sample_rate, target_sr=16000)
-        sample_rate = 16000
+    #     wave = librosa.resample(wave, orig_sr=sample_rate, target_sr=16000)
+    #     sample_rate = 16000
 
     features = []
     opts = knf.WhisperFeatureOptions()
@@ -457,6 +469,7 @@ def min_distance(word1: str, word2: str) -> int:
 def main():
     args = get_args()
     model_type = args.model
+    max_num = max(0, args.max_num)
     encoder_filename = f"{model_type}-encoder.onnx"
     decoder_dynamic_filename = f"{model_type}-decoder-main.onnx"
     decoder_static_filename = f"{model_type}-decoder-loop.onnx"
@@ -498,7 +511,9 @@ def main():
     all_character_num = 0
     all_character_error_num = 0
     with open(args.gt_file, "r") as f:
-        for line in f:
+        for i, line in enumerate(f):
+            if i >= max_num:
+                break
             line = line.strip()
             name, gt = line.split(' ')
             character_num = len(gt)
@@ -553,22 +568,23 @@ def main():
         tar.close()
         print(f"Save {tar_filename}")
     
-    with open('out_report.tsv', 'w', newline='', encoding='utf-8') as file:
-        writer = csv.writer(file, delimiter='\t')
-        row = ["name", "gt", "pd", "character_num", "character_error_num", "character_error_rate(%)"]
-        writer.writerow(row)
-        for data in dataset:
-            row = [
-                data["name"],
-                data["gt"],
-                data["pd"],
-                data["character_num"],
-                data["character_error_num"],
-                data["character_error_rate"],
-            ]
+    if args.save_report:
+        with open('out_report.tsv', 'w', newline='', encoding='utf-8') as file:
+            writer = csv.writer(file, delimiter='\t')
+            row = ["name", "gt", "pd", "character_num", "character_error_num", "character_error_rate(%)"]
             writer.writerow(row)
-        writer.writerow([])
-        writer.writerow(["total_character_error_rate(%): ", total_character_error_rate])
+            for data in dataset:
+                row = [
+                    data["name"],
+                    data["gt"],
+                    data["pd"],
+                    data["character_num"],
+                    data["character_error_num"],
+                    data["character_error_rate"],
+                ]
+                writer.writerow(row)
+            writer.writerow([])
+            writer.writerow(["total_character_error_rate(%): ", total_character_error_rate])
 
 
 if __name__ == "__main__":

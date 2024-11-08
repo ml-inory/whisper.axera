@@ -17,12 +17,12 @@ pip install -r requirements.txt
 
 导出tiny模型
 ```
-python export_onnx_ax_loop.py --model tiny
+python export_onnx.py --model tiny
 ```
 
 导出small模型
 ```
-python export_onnx_ax_loop.py --model small
+python export_onnx.py --model small
 ```
 
 导出成功后会生成以tiny-或small-开头的三个模型（xxx-encoder.onnx xxx-decoder-main.onnx xxx-decoder-loop.onnx)和必要的文件
@@ -36,11 +36,11 @@ unzip dataset.zip
 ## 生成量化数据集
 tiny模型
 ```
-python test_ax_loop.py --model tiny
+python generate_data.py --model tiny
 ```
 small模型
 ```
-python test_ax_loop.py --model small
+python generate_data.py --model small
 ```
 
 ## 修改配置文件

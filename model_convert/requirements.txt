@@ -1,4 +1,8 @@
 openai-whisper==20231117
 onnx
 onnx-simplifier
+onnxruntime
 torch
+zhconv
+soundfile
+kaldi_native_fbank
