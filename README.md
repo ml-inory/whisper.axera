@@ -38,7 +38,9 @@ cd cpp
 
 ### 运行
 
-```./install/whisper --model_type small -e ../small-encoder.axmodel -m ../small-decoder-main.axmodel -l ../small-decoder-loop.axmodel -w ../BAC009S0764W0124.wav  -p ../small-positional_embedding.bin -t ../small-tokens.txt```
+```./install/whisper -w ../demo.wav```  
+或  
+```./install/whisper --model_type small -e ../small-encoder.axmodel -m ../small-decoder-main.axmodel -l ../small-decoder-loop.axmodel -w ../demo.wav  -p ../small-positional_embedding.bin -t ../small-tokens.txt```  
 
 ### Latency
 | model | latency(ms) |

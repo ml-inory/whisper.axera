@@ -7,6 +7,7 @@ from typing import Tuple
 import soundfile as sf
 import base64
 import zhconv
+import time
 
 
 WHISPER_N_MELS      = 80
@@ -141,16 +142,23 @@ def main():
     mel = compute_feature(wav_path, n_mels=WHISPER_N_MELS)
 
     # Run encoder
-    n_layer_cross_k, n_layer_cross_v = encoder.run(input_feed={"mel": mel})
+    start = time.time()
+    x = encoder.run(input_feed={"mel": mel})
+    n_layer_cross_k, n_layer_cross_v = x["n_layer_cross_k"], x["n_layer_cross_v"]
+    print(f"Run encoder take {(time.time() - start) * 1000}ms")
 
     # Run decoder_main
-    logits, n_layer_self_k_cache, n_layer_self_v_cache = decoder_main.run(input_feed={
+    start = time.time()
+    x = decoder_main.run(input_feed={
         "tokens": SOT_SEQUENCE,
         "n_layer_cross_k": n_layer_cross_k,
         "n_layer_cross_v": n_layer_cross_v
     })
+    logits, n_layer_self_k_cache, n_layer_self_v_cache = x["logits"], x["out_n_layer_self_k_cache"], x["out_n_layer_self_v_cache"]
+    print(f"Run decoder_main take {(time.time() - start) * 1000}ms")
 
     # Decode token
+    logits = logits.flatten()[-WHISPER_VOCAB_SIZE:]
     logits = supress_tokens(logits, is_initial=True)
     max_token_id = np.argmax(logits)
     output_tokens = []
@@ -170,7 +178,8 @@ def main():
         mask[: WHISPER_N_TEXT_CTX - offset - 1] = NEG_INF
 
         # Run decoder_loop
-        logits, n_layer_self_k_cache, n_layer_self_v_cache = decoder_loop.run(input_feed={
+        start = time.time()
+        x = decoder_loop.run(input_feed={
             "tokens": np.array([output_tokens[-1]], dtype=np.int32),
             "in_n_layer_self_k_cache": n_layer_self_k_cache,
             "in_n_layer_self_v_cache": n_layer_self_v_cache,
@@ -179,10 +188,12 @@ def main():
             "positional_embedding": pe[offset * WHISPER_N_TEXT_STATE : (offset + 1) * WHISPER_N_TEXT_STATE],
             "mask": mask
         })
+        logits, n_layer_self_k_cache, n_layer_self_v_cache = x["logits"], x["out_n_layer_self_k_cache"], x["out_n_layer_self_v_cache"]
+        print(f"Run decoder_loop take {(time.time() - start) * 1000}ms")
 
         # Decode token
         offset += 1
-        logits = supress_tokens(logits, is_initial=False)
+        logits = supress_tokens(logits.flatten(), is_initial=False)
         max_token_id = np.argmax(logits)
 
         print(f"Iter {i} \t Token: {max_token_id}")

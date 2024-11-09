@@ -24,10 +24,10 @@ aux_source_directory(src SRC)
 add_executable(whisper whisper.cpp ${SRC})
 target_link_libraries(whisper ${MSP_LIBS} opencc marisa)
 
-file(COPY ${CMAKE_SOURCE_DIR}/opencc/share/opencc/t2s.json DESTINATION ${CMAKE_BINARY_DIR})
-file(COPY ${CMAKE_SOURCE_DIR}/opencc/share/opencc/TSPhrases.ocd2 DESTINATION ${CMAKE_BINARY_DIR})
-file(COPY ${CMAKE_SOURCE_DIR}/opencc/share/opencc/TSCharacters.ocd2 DESTINATION ${CMAKE_BINARY_DIR})
+file(COPY ${CMAKE_SOURCE_DIR}/opencc/share/opencc/t2s.json DESTINATION ${CMAKE_INSTALL_PREFIX})
+file(COPY ${CMAKE_SOURCE_DIR}/opencc/share/opencc/TSPhrases.ocd2 DESTINATION ${CMAKE_INSTALL_PREFIX})
+file(COPY ${CMAKE_SOURCE_DIR}/opencc/share/opencc/TSCharacters.ocd2 DESTINATION ${CMAKE_INSTALL_PREFIX})
 
 install(TARGETS whisper
         RUNTIME
-            DESTINATION bin)
+            DESTINATION .)
