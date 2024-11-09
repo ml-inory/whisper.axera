@@ -257,6 +257,8 @@ int main(int argc, char** argv) {
     supress_tokens(logits, true);
     max_token_id = argmax(logits);
 
+    printf("First token: %d\n", max_token_id);
+
     // fp = fopen("logits.bin", "wb");
     // fwrite(logits.data(), sizeof(float), logits.size(), fp);
     // fclose(fp);
@@ -301,7 +303,7 @@ int main(int argc, char** argv) {
         supress_tokens(logits, false);
         max_token_id = argmax(logits);  
 
-        printf("Next Token: %d\n", results.back());
+        printf("Next Token: %d\n", max_token_id);
     }
 
     // fp = fopen("n_layer_cross_k.bin", "wb");

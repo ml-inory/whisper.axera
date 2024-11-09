@@ -33,34 +33,34 @@ static AX_S32 CheckModelVNpu(const std::string &strModel, const AX_ENGINE_MODEL_
         // VNPU DISABLE
         if (stNpuAttr.eHardMode == AX_ENGINE_VIRTUAL_NPU_DISABLE) {
             nNpuSet = 0x01; // NON-VNPU (0b111)
-            printf("%s will run under VNPU-DISABLE [%s]\n", strModel.c_str(), strAlgoModelType[eModelType]);
+            // printf("%s will run under VNPU-DISABLE [%s]\n", strModel.c_str(), strAlgoModelType[eModelType]);
         }
         // STD VNPU
         else if (stNpuAttr.eHardMode == AX_ENGINE_VIRTUAL_NPU_STD) {
             // 7.2T & 10.8T no allow
             if (eModelType == AX_ENGINE_MODEL_TYPE1
                 || eModelType == AX_ENGINE_MODEL_TYPE2) {
-                printf("%s model type%d: [%s], no allow run under STD VNPU\n", strModel.c_str(), eModelType, strAlgoModelType[eModelType]);
+                // printf("%s model type%d: [%s], no allow run under STD VNPU\n", strModel.c_str(), eModelType, strAlgoModelType[eModelType]);
                 return -1;
             }
 
             // default STD VNPU2
             if (nNpuType == 0) {
                 nNpuSet = 0x02; // VNPU2 (0b010)
-                printf("%s will run under default STD-VNPU2 [%s]\n", strModel.c_str(), strAlgoModelType[eModelType]);
+                // printf("%s will run under default STD-VNPU2 [%s]\n", strModel.c_str(), strAlgoModelType[eModelType]);
             }
             else {
                 if (nNpuType & AX_STD_VNPU_1) {
                     nNpuSet |= 0x01; // VNPU1 (0b001)
-                    printf("%s will run under STD-VNPU1 [%s]\n", strModel.c_str(), strAlgoModelType[eModelType]);
+                    // printf("%s will run under STD-VNPU1 [%s]\n", strModel.c_str(), strAlgoModelType[eModelType]);
                 }
                 if (nNpuType & AX_STD_VNPU_2) {
                     nNpuSet |= 0x02; // VNPU2 (0b010)
-                    printf("%s will run under STD-VNPU2 [%s]\n", strModel.c_str(), strAlgoModelType[eModelType]);
+                    // printf("%s will run under STD-VNPU2 [%s]\n", strModel.c_str(), strAlgoModelType[eModelType]);
                 }
                 if (nNpuType & AX_STD_VNPU_3) {
                     nNpuSet |= 0x04; // VNPU3 (0b100)
-                    printf("%s will run under STD-VNPU3 [%s]\n", strModel.c_str(), strAlgoModelType[eModelType]);
+                    // printf("%s will run under STD-VNPU3 [%s]\n", strModel.c_str(), strAlgoModelType[eModelType]);
                 }
             }
         }
@@ -68,7 +68,7 @@ static AX_S32 CheckModelVNpu(const std::string &strModel, const AX_ENGINE_MODEL_
         else if (stNpuAttr.eHardMode == AX_ENGINE_VIRTUAL_NPU_BIG_LITTLE) {
             // 10.8T no allow
             if (eModelType == AX_ENGINE_MODEL_TYPE2) {
-                printf("%s model type%d: [%s], no allow run under BL VNPU\n", strModel.c_str(), eModelType, strAlgoModelType[eModelType]);
+                // printf("%s model type%d: [%s], no allow run under BL VNPU\n", strModel.c_str(), eModelType, strAlgoModelType[eModelType]);
                 return -1;
             }
 
@@ -77,12 +77,12 @@ static AX_S32 CheckModelVNpu(const std::string &strModel, const AX_ENGINE_MODEL_
                 // 7.2T default BL VNPU1
                 if (eModelType == AX_ENGINE_MODEL_TYPE1) {
                     nNpuSet = 0x01; // VNPU1 (0b001)
-                    printf("%s will run under default BL-VNPU1 [%s]\n", strModel.c_str(), strAlgoModelType[eModelType]);
+                    // printf("%s will run under default BL-VNPU1 [%s]\n", strModel.c_str(), strAlgoModelType[eModelType]);
                 }
                 // 3.6T default BL VNPU2
                 else {
                     nNpuSet = 0x02; // VNPU2 (0b010)
-                    printf("%s will run under default BL-VNPU2 [%s]\n", strModel.c_str(), strAlgoModelType[eModelType]);
+                    // printf("%s will run under default BL-VNPU2 [%s]\n", strModel.c_str(), strAlgoModelType[eModelType]);
                 }
             }
             else {
@@ -90,23 +90,23 @@ static AX_S32 CheckModelVNpu(const std::string &strModel, const AX_ENGINE_MODEL_
                 if (eModelType == AX_ENGINE_MODEL_TYPE1) {
                     // no allow set to BL VNPU2
                     if (nNpuType & AX_BL_VNPU_2) {
-                        printf("%s model type%d: [%s], no allow run under BL VNPU2\n", strModel.c_str(), eModelType, strAlgoModelType[eModelType]);
+                        // printf("%s model type%d: [%s], no allow run under BL VNPU2\n", strModel.c_str(), eModelType, strAlgoModelType[eModelType]);
                         return -1;
                     }
                     if (nNpuType & AX_BL_VNPU_1) {
                         nNpuSet |= 0x01; // VNPU1 (0b001)
-                        printf("%s will run under BL-VNPU1 [%s]\n", strModel.c_str(), strAlgoModelType[eModelType]);
+                        // printf("%s will run under BL-VNPU1 [%s]\n", strModel.c_str(), strAlgoModelType[eModelType]);
                     }
                 }
                 // 3.6T
                 else {
                     if (nNpuType & AX_BL_VNPU_1) {
                         nNpuSet |= 0x01; // VNPU1 (0b001)
-                        printf("%s will run under BL-VNPU1 [%s]\n", strModel.c_str(), strAlgoModelType[eModelType]);
+                        // printf("%s will run under BL-VNPU1 [%s]\n", strModel.c_str(), strAlgoModelType[eModelType]);
                     }
                     if (nNpuType & AX_BL_VNPU_2) {
                         nNpuSet |= 0x02; // VNPU2 (0b010)
-                        printf("%s will run under BL-VNPU2 [%s]\n", strModel.c_str(), strAlgoModelType[eModelType]);
+                        // printf("%s will run under BL-VNPU2 [%s]\n", strModel.c_str(), strAlgoModelType[eModelType]);
                     }
                 }
             }

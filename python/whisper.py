@@ -158,7 +158,7 @@ def main():
     print(f"Run decoder_main take {(time.time() - start) * 1000}ms")
 
     # Decode token
-    logits = logits.flatten()[-WHISPER_VOCAB_SIZE:]
+    logits = logits[:, -1, :].flatten()
     logits = supress_tokens(logits, is_initial=True)
     max_token_id = np.argmax(logits)
     output_tokens = []
