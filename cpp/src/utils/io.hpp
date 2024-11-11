@@ -462,13 +462,6 @@ namespace utils {
         return 0;
     }
 
-    static inline AX_S32 push_io_input(uint8_t* input, int index, AX_ENGINE_IO_T& io) {
-        // img ranks_depth ranks_feat ranks_bev, n_points
-        AX_ENGINE_IO_BUFFER_T* pImg = &io.pInputs[index];
-        memcpy(pImg->pVirAddr, input, pImg->nSize);
-        return 0;
-    }
-
     static inline AX_S32 cache_io_flush(const AX_ENGINE_IO_BUFFER_T *io_buf) {
         if (io_buf->phyAddr != 0) {
             AX_SYS_MflushCache(io_buf->phyAddr, io_buf->pVirAddr, io_buf->nSize);
@@ -477,7 +470,16 @@ namespace utils {
         return 0;
     }
 
-    static inline AX_S32 push_io_output(uint8_t* output,
+    static inline AX_S32 push_io_input(void* input, int index, AX_ENGINE_IO_T& io) {
+        // img ranks_depth ranks_feat ranks_bev, n_points
+        AX_ENGINE_IO_BUFFER_T* pImg = &io.pInputs[index];
+        
+        memcpy(pImg->pVirAddr, input, pImg->nSize);
+        cache_io_flush(pImg);
+        return 0;
+    }
+
+    static inline AX_S32 push_io_output(void* output,
                                         int index,
                                         AX_ENGINE_IO_T& io) {
         AX_ENGINE_IO_BUFFER_T* pImg = &io.pOutputs[index];

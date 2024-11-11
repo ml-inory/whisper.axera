@@ -13,49 +13,8 @@
 #include <vector>
 #include "EngineWrapper.hpp"
 
-struct EncoderData {
-    // Input
-    std::vector<float> mel;
-    
-    // Output
-    std::vector<float> n_layer_cross_k;
-    std::vector<float> n_layer_cross_v;
-};
-
 class Encoder : public EngineWrapper {
 public:
     Encoder() = default;
     ~Encoder() = default;
-
-    int PrepareData(EncoderData& data) {
-        data.mel.resize(GetInputSize(0) / sizeof(float));
-        data.n_layer_cross_k.resize(GetOutputSize(0) / sizeof(float));
-        data.n_layer_cross_v.resize(GetOutputSize(1) / sizeof(float));
-        return 0;
-    }
-
-    int Run(EncoderData& data) {
-        int ret = 0;
-        ret = SetInput((uint8_t*)data.mel.data(), 0);
-        if (ret) {
-            return ret;
-        }
-
-        ret = this->RunSync();
-        if (ret) {
-            return ret;
-        }
-
-        ret = GetOutput((uint8_t*)data.n_layer_cross_k.data(), 0);
-        if (ret) {
-            return ret;
-        }
-
-        ret = GetOutput((uint8_t*)data.n_layer_cross_v.data(), 1);
-        if (ret) {
-            return ret;
-        }
-
-        return ret;
-    }
 };

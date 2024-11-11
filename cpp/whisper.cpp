@@ -6,6 +6,7 @@
 #include <fstream>
 #include <ax_sys_api.h>
 #include <unordered_map>
+#include <ctime>
 
 #include "cmdline.hpp"
 #include "AudioFile.h"
@@ -164,50 +165,37 @@ int main(int argc, char** argv) {
     // }
     // fclose(fp);
 
-    EncoderData encoder_data;
     Encoder encoder;
-
-    DecoderMainData decoder_main_data;
     DecoderMain decoder_main;
-
-    DecoderLoopData decoder_loop_data;
     DecoderLoop decoder_loop;
+    clock_t start, end;
 
+    start = clock();
     ret = encoder.Init(encoder_file.c_str());
     if (ret) {
         printf("encoder init failed!\n");
         return ret;
     }
+    end = clock();
+    printf("Load encoder take %.2f ms\n", (end - start) * 1000.f / CLOCKS_PER_SEC);
 
+    start = clock();
     ret = decoder_main.Init(decoder_main_file.c_str());
     if (ret) {
         printf("decoder_main init failed!\n");
         return ret;
     }
+    end = clock();
+    printf("Load decoder_main take %.2f ms\n", (end - start) * 1000.f / CLOCKS_PER_SEC);
 
+    start = clock();
     ret = decoder_loop.Init(decoder_loop_file.c_str());
     if (ret) {
         printf("decoder_loop init failed!\n");
         return ret;
     }
-
-    ret = encoder.PrepareData(encoder_data);
-    if (ret) {
-        printf("encoder prepare data failed!\n");
-        return ret;
-    }
-
-    ret = decoder_main.PrepareData(decoder_main_data);
-    if (ret) {
-        printf("decoder_main prepare data failed!\n");
-        return ret;
-    }
-
-    ret = decoder_loop.PrepareData(decoder_loop_data);
-    if (ret) {
-        printf("decoder_loop prepare data failed!\n");
-        return ret;
-    }
+    end = clock();
+    printf("Load decoder_loop take %.2f ms\n", (end - start) * 1000.f / CLOCKS_PER_SEC);
 
     int offset = 0;
     std::vector<float> logits(WHISPER_VOCAB_SIZE);
@@ -215,19 +203,28 @@ int main(int argc, char** argv) {
     std::vector<int> results;
     std::vector<int> tokens(1);
     bool is_broke = false;
-    std::vector<float> n_layer_self_k_cache = decoder_loop_data.out_n_layer_self_k_cache;
-    std::vector<float> n_layer_self_v_cache = decoder_loop_data.out_n_layer_self_v_cache;
+    
+    std::vector<float> n_layer_cross_k(encoder.GetOutputSize(0) / sizeof(float));
+    std::vector<float> n_layer_cross_v(encoder.GetOutputSize(1) / sizeof(float));
+
+    std::vector<float> decoder_main_logits(4 * WHISPER_VOCAB_SIZE);
+    std::vector<float> n_layer_self_k_cache(decoder_main.GetOutputSize(1) / sizeof(float));
+    std::vector<float> n_layer_self_v_cache(decoder_main.GetOutputSize(2) / sizeof(float));
 
     // encoder
+    std::vector<float> continous_mel(WHISPER_N_MELS * n_len);
     for (int i = 0; i < n_mel; i++) {
-        memcpy(encoder_data.mel.data() + i * n_len, mel[i].data(), sizeof(float) * n_len);
+        memcpy(continous_mel.data() + i * n_len, mel[i].data(), sizeof(float) * n_len);
     }
 
-    ret = encoder.Run(encoder_data);
+    encoder.SetInput(continous_mel.data(), 0);
+    ret = encoder.Run();
     if (ret) {
         printf("encoder run failed!\n");
         return ret;
     }
+    encoder.GetOutput(n_layer_cross_k.data(), 0);
+    encoder.GetOutput(n_layer_cross_v.data(), 1);
 
     // fp = fopen("n_layer_cross_k.bin", "wb");
     // fwrite(encoder_data.n_layer_cross_k.data(), sizeof(float), encoder_data.n_layer_cross_k.size(), fp);
@@ -238,30 +235,38 @@ int main(int argc, char** argv) {
     // fclose(fp);
 
     // decoder_main
-    decoder_main_data.tokens = SOT_SEQUENCE;
-    decoder_main_data.n_layer_cross_k = encoder_data.n_layer_cross_k;
-    decoder_main_data.n_layer_cross_v = encoder_data.n_layer_cross_v;
-
-    ret = decoder_main.Run(decoder_main_data);
+    start = clock();
+    decoder_main.SetInput(SOT_SEQUENCE.data(), 0);
+    decoder_main.SetInput(n_layer_cross_k.data(), 1);
+    decoder_main.SetInput(n_layer_cross_v.data(), 2);
+    ret = decoder_main.Run();
     if (ret) {
         printf("decoder_main run failed!\n");
         return ret;
     }
-
-    n_layer_self_k_cache = decoder_main_data.out_n_layer_self_k_cache;
-    n_layer_self_v_cache = decoder_main_data.out_n_layer_self_v_cache;
+    decoder_main.GetOutput(decoder_main_logits.data(), 0);
+    decoder_main.GetOutput(n_layer_self_k_cache.data(), 1);
+    decoder_main.GetOutput(n_layer_self_v_cache.data(), 2);
+    end = clock();
 
     offset += SOT_SEQUENCE.size();
     // logits = logits[0, -1]
-    std::copy(decoder_main_data.logits.begin() + 3 * WHISPER_VOCAB_SIZE, decoder_main_data.logits.end(), logits.begin());
+    std::copy(decoder_main_logits.begin() + 3 * WHISPER_VOCAB_SIZE, decoder_main_logits.end(), logits.begin());
     supress_tokens(logits, true);
     max_token_id = argmax(logits);
 
-    printf("First token: %d\n", max_token_id);
+    printf("First token: %d \t take %.2fms\n", max_token_id, (end - start) * 1000.f / CLOCKS_PER_SEC);
+
+    std::vector<float> mask(WHISPER_N_TEXT_CTX);
+    for (int n = 0; n < WHISPER_N_TEXT_CTX - offset - 1; n++) {
+        mask[n] = NEG_INF;
+    }
 
     // fp = fopen("logits.bin", "wb");
     // fwrite(logits.data(), sizeof(float), logits.size(), fp);
     // fclose(fp);
+    decoder_loop.SetInput(n_layer_self_k_cache.data(), 1);
+    decoder_loop.SetInput(n_layer_self_v_cache.data(), 2);
 
     for (int i = 0; i < WHISPER_N_TEXT_CTX - SOT_SEQUENCE.size(); i++) {
         if (max_token_id == WHISPER_EOT) {
@@ -272,38 +277,34 @@ int main(int argc, char** argv) {
         results.push_back(max_token_id);
         tokens[0] = results.back();
         // mask[:model.n_text_ctx - offset[0] - 1] = -torch.inf
-        std::vector<float> mask(WHISPER_N_TEXT_CTX);
-        for (int n = 0; n < WHISPER_N_TEXT_CTX - offset - 1; n++) {
-            mask[n] = NEG_INF;
-        }
-        
+       
         // inference
-        decoder_loop_data.tokens = tokens;
-        decoder_loop_data.in_n_layer_self_k_cache = n_layer_self_k_cache;
-        decoder_loop_data.in_n_layer_self_v_cache = n_layer_self_v_cache;
-        decoder_loop_data.n_layer_cross_k = encoder_data.n_layer_cross_k;
-        decoder_loop_data.n_layer_cross_v = encoder_data.n_layer_cross_v;
-        // positional_embedding=positional_embedding[offset[0] : offset[0] + tokens.shape[-1]],
-        std::copy(positional_embedding.begin() + offset * WHISPER_N_TEXT_STATE, \
-                    positional_embedding.begin() + (offset + 1) * WHISPER_N_TEXT_STATE, \
-                    decoder_loop_data.positional_embedding.begin());
-        decoder_loop_data.mask = mask;
+        start = clock();
+        decoder_loop.SetInput(tokens.data(), 0);
+        decoder_loop.SetInput(n_layer_cross_k.data(), 3);
+        decoder_loop.SetInput(n_layer_cross_v.data(), 4);
+        decoder_loop.SetInput(positional_embedding.data() + offset * WHISPER_N_TEXT_STATE, 5);
+        decoder_loop.SetInput(mask.data(), 6);
 
-        ret = decoder_loop.Run(decoder_loop_data);
+        // start = clock();
+        ret = decoder_loop.Run();
         if (ret) {
             printf("decoder_loop run failed!\n");
             return ret;
-        }       
+        } 
 
-        logits = decoder_loop_data.logits;
-        n_layer_self_k_cache = decoder_loop_data.out_n_layer_self_k_cache; 
-        n_layer_self_v_cache = decoder_loop_data.out_n_layer_self_v_cache;             
+        decoder_loop.SetInput(decoder_loop.GetOutputPtr(1), 1);
+        decoder_loop.SetInput(decoder_loop.GetOutputPtr(2), 2);
+        decoder_loop.GetOutput(logits.data(), 0);
 
         offset += 1;
+        mask[WHISPER_N_TEXT_CTX - offset - 1] = 0;
+
         supress_tokens(logits, false);
         max_token_id = argmax(logits);  
+        end = clock();  
 
-        printf("Next Token: %d\n", max_token_id);
+        printf("Next Token: %d \t take %.2fms\n", max_token_id, (end - start) * 1000.f / CLOCKS_PER_SEC);
     }
 
     // fp = fopen("n_layer_cross_k.bin", "wb");

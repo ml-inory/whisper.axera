@@ -237,7 +237,7 @@ int EngineWrapper::Init(const char* strModelPath, uint32_t nNpuType)
 
     // 6. prepare io
     // AX_U32 nIoDepth = (stCtx.vecOutputBufferFlag.size() == 0) ? 1 : stCtx.vecOutputBufferFlag.size();
-    ret = utils::prepare_io(strModelPath, m_io_info, m_io, utils::IO_BUFFER_STRATEGY_DEFAULT);
+    ret = utils::prepare_io(strModelPath, m_io_info, m_io, utils::IO_BUFFER_STRATEGY_CACHED);
     if (0 != ret) {
         printf("prepare io failed!\n");
         utils::free_io(m_io);
@@ -250,11 +250,11 @@ int EngineWrapper::Init(const char* strModelPath, uint32_t nNpuType)
     return 0;
 }
 
-int EngineWrapper::SetInput(uint8_t* pInput, int index) {
+int EngineWrapper::SetInput(void* pInput, int index) {
     return utils::push_io_input(pInput, index, m_io);
 }
 
-int EngineWrapper::RunSync()
+int EngineWrapper::Run()
 {
     if (!m_hasInit)
         return -1;
@@ -269,7 +269,7 @@ int EngineWrapper::RunSync()
     return 0;
 }
 
-int EngineWrapper::GetOutput(uint8_t* pOutput, int index) {
+int EngineWrapper::GetOutput(void* pOutput, int index) {
     return utils::push_io_output(pOutput, index, m_io);
 }
 
@@ -279,6 +279,11 @@ int EngineWrapper::GetInputSize(int index) {
 
 int EngineWrapper::GetOutputSize(int index) {
     return m_io.pOutputs[index].nSize;
+}
+
+void* EngineWrapper::GetOutputPtr(int index) {
+    utils::cache_io_flush(&m_io.pOutputs[index]);
+    return m_io.pOutputs[index].pVirAddr;
 }
 
 int EngineWrapper::Release()
