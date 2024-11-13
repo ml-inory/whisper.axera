@@ -85,6 +85,7 @@ def load_models(model_path, model_type):
     tokens = []
     with open(required_files[4], "r") as f:
         for line in f:
+            line = line.strip()
             tokens.append(line.split(" ")[0])
 
     return encoder, decoder_main, decoder_loop, pe, tokens
@@ -207,8 +208,7 @@ def main():
     
     s = b""
     for i in output_tokens:
-        if i in token_table:
-            s += base64.b64decode(token_table[i])
+        s += base64.b64decode(token_table[i])
     # print(s.decode().strip())
     pd = zhconv.convert(s.decode().strip(), 'zh-hans')
     print(f"Result: {pd}")
