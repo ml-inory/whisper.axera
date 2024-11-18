@@ -5,9 +5,10 @@ OpenAI Whisper on Axera
 - 目前支持 C++ 和 Python 两种语言
 - 预编译模型下载([Baidu](https://pan.baidu.com/s/1tOHVMZCin0A68T5HmKRJyg?pwd=axyz))，如需自行转换请参考[模型转换](/model_convert/README.md)
 
-TBD：
+## 支持平台
 
-- [ ] 支持 AX630C
+- [x] AX650N
+- [ ] AX630C
 
 ## 模型转换
 
