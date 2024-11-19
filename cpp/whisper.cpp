@@ -252,21 +252,25 @@ int main(int argc, char** argv) {
         memcpy(continous_mel.data() + i * n_len, mel[i].data(), sizeof(float) * n_len);
     }
 
+    // fp = fopen("mel.bin", "wb");
+    // fwrite(continous_mel.data(), sizeof(float), continous_mel.size(), fp);
+    // fclose(fp);
+
     encoder.SetInput(continous_mel.data(), 0);
     ret = encoder.Run();
     if (ret) {
         printf("encoder run failed!\n");
         return ret;
     }
-    encoder.GetOutput(n_layer_cross_k.data(), 0);
-    encoder.GetOutput(n_layer_cross_v.data(), 1);
+    // encoder.GetOutput(n_layer_cross_k.data(), 0);
+    // encoder.GetOutput(n_layer_cross_v.data(), 1);
 
     // fp = fopen("n_layer_cross_k.bin", "wb");
-    // fwrite(encoder_data.n_layer_cross_k.data(), sizeof(float), encoder_data.n_layer_cross_k.size(), fp);
+    // fwrite(n_layer_cross_k.data(), sizeof(float), n_layer_cross_k.size(), fp);
     // fclose(fp);
 
     // fp = fopen("n_layer_cross_v.bin", "wb");
-    // fwrite(encoder_data.n_layer_cross_v.data(), sizeof(float), encoder_data.n_layer_cross_v.size(), fp);
+    // fwrite(n_layer_cross_v.data(), sizeof(float), n_layer_cross_v.size(), fp);
     // fclose(fp);
 
     // detect language
@@ -275,16 +279,16 @@ int main(int argc, char** argv) {
     // decoder_main
     start = clock();
     decoder_main.SetInput(SOT_SEQUENCE.data(), 0);
-    decoder_main.SetInput(n_layer_cross_k.data(), 1);
-    decoder_main.SetInput(n_layer_cross_v.data(), 2);
+    decoder_main.SetInput(encoder.GetOutputPtr(0), 1);
+    decoder_main.SetInput(encoder.GetOutputPtr(1), 2);
     ret = decoder_main.Run();
     if (ret) {
         printf("decoder_main run failed!\n");
         return ret;
     }
     decoder_main.GetOutput(decoder_main_logits.data(), 0);
-    decoder_main.GetOutput(n_layer_self_k_cache.data(), 1);
-    decoder_main.GetOutput(n_layer_self_v_cache.data(), 2);
+    // decoder_main.GetOutput(n_layer_self_k_cache.data(), 1);
+    // decoder_main.GetOutput(n_layer_self_v_cache.data(), 2);
     end = clock();
 
     offset += SOT_SEQUENCE.size();
@@ -307,8 +311,10 @@ int main(int argc, char** argv) {
     // fp = fopen("logits.bin", "wb");
     // fwrite(logits.data(), sizeof(float), logits.size(), fp);
     // fclose(fp);
-    decoder_loop.SetInput(n_layer_self_k_cache.data(), 1);
-    decoder_loop.SetInput(n_layer_self_v_cache.data(), 2);
+    decoder_loop.SetInput(decoder_main.GetOutputPtr(1), 1);
+    decoder_loop.SetInput(decoder_main.GetOutputPtr(2), 2);
+    decoder_loop.SetInput(encoder.GetOutputPtr(0), 3);
+    decoder_loop.SetInput(encoder.GetOutputPtr(1), 4);
 
     for (int i = 0; i < WHISPER_N_TEXT_CTX - SOT_SEQUENCE.size(); i++) {
         if (max_token_id == WHISPER_EOT) {
@@ -323,8 +329,8 @@ int main(int argc, char** argv) {
         // inference
         start = clock();
         decoder_loop.SetInput(tokens.data(), 0);
-        decoder_loop.SetInput(n_layer_cross_k.data(), 3);
-        decoder_loop.SetInput(n_layer_cross_v.data(), 4);
+        // decoder_loop.SetInput(n_layer_cross_k.data(), 3);
+        // decoder_loop.SetInput(n_layer_cross_v.data(), 4);
         decoder_loop.SetInput(positional_embedding.data() + offset * WHISPER_N_TEXT_STATE, 5);
         decoder_loop.SetInput(mask.data(), 6);
 
