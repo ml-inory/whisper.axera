@@ -33,6 +33,23 @@
 #define WHISPER_N_TEXT_CTX  448
 #define NEG_INF             -std::numeric_limits<float>::infinity()
 
+static std::vector<int> WHISPER_LANG_CODES{
+    50273,50303,50288,50261,50342,50299,50330,50302,50336,50267,50287,50292,50294,50323,50348,50291,50317,
+    50326,50289,50356,50290,50282,50347,50331,50354,50264,50333,50296,50339,50318,50305,50293,50280,50322,
+    50312,50306,50353,50285,50275,50340,50278,50268,50337,50316,50266,50307,50310,50338,50334,50313,50351,
+    50260,50344,50283,50327,50272,50324,50276,50281,50301,50332,50300,50309,50343,50349,50335,50320,50259,
+    50284,50304,50277,50311,50319,50314,50352,50328,50286,50274,50329,50270,50269,50350,50263,50345,50298,
+    50279,50297,50262,50315,50321,50308,50355,50265,50346,50295,50271,50357,50341,50325
+};
+
+static std::vector<std::string> WHISPER_LANG_NAMES{
+    "sv","sr","no","de","nn","te", "be","bn","lo","pt","ta","bg","la","km","tl","hr","sq","so","th","jw","ur","ms","bo",
+    "tg","ha","ko","gu","ml","ht", "sw","sl","lt","uk","si","hy","kn","ln","da","id","ps","vi","tr","uz","kk","ja","et",
+    "eu","fo","am","ne","tt","zh", "sa","cs","af","ar","sn","hi","el","lv","sd","fa","br","mt","mg","yi","mr","en","ro",
+    "az","fi","is","gl","mn","haw","oc","hu","it","ka","ca","pl","as","ru","lb","sk","he","cy","es","bs","pa","mk","ba",
+    "fr","my","mi","nl","su","tk", "yo"
+};
+
 static std::unordered_map<std::string, int> WHISPER_N_TEXT_STATE_MAP{
     {"tiny",    384},
     {"small",   768}
@@ -58,6 +75,18 @@ static int argmax(const std::vector<float>& logits) {
     return std::distance(logits.begin(), max_iter); // absolute index of max
 }
 
+static int detect_language(const std::string& language) {
+    int i = 51; // zh
+    for (int n = 0; n < WHISPER_LANG_CODES.size(); n++) {
+        if (language == WHISPER_LANG_NAMES[n]) {
+            i = n;
+            break;
+        }
+    }
+    
+    return WHISPER_LANG_CODES[i];
+}
+
 
 int main(int argc, char** argv) {
     cmdline::parser cmd;
@@ -68,6 +97,7 @@ int main(int argc, char** argv) {
     cmd.add<std::string>("token", 't', "tokens txt", false, "../models/small-tokens.txt");
     cmd.add<std::string>("wav", 'w', "wav file", true, "");
     cmd.add<std::string>("model_type", 0, "tiny, small, large", false, "small");
+    cmd.add<std::string>("language", 0, "en, zh", false, "zh");
     cmd.parse_check(argc, argv);
 
     // 0. get app args, can be removed from user's app
@@ -78,6 +108,7 @@ int main(int argc, char** argv) {
     auto token_file = cmd.get<std::string>("token");
     auto wav_file = cmd.get<std::string>("wav");
     auto model_type = cmd.get<std::string>("model_type");
+    auto language = cmd.get<std::string>("language");
 
     if (WHISPER_N_TEXT_STATE_MAP.find(model_type) == WHISPER_N_TEXT_STATE_MAP.end()) {
         fprintf(stderr, "Can NOT find n_text_state for model_type: %s\n", model_type.c_str());
@@ -101,7 +132,11 @@ int main(int argc, char** argv) {
         return -1;
     }
 
-    printf("encoder: %s\ndecoder_main: %s\ndecoder_loop: %s\nwav_file: %s\n", encoder_file.c_str(), decoder_main_file.c_str(), decoder_loop_file.c_str(), wav_file.c_str());
+    printf("encoder: %s\n", encoder_file.c_str());
+    printf("decoder_main: %s\n", decoder_main_file.c_str());
+    printf("decoder_loop: %s\n", decoder_loop_file.c_str());
+    printf("wav_file: %s\n", wav_file.c_str());
+    printf("language: %s\n", language.c_str());
 
     AudioFile<float> audio_file;
     if (!audio_file.load(wav_file)) {
@@ -234,6 +269,9 @@ int main(int argc, char** argv) {
     // fwrite(encoder_data.n_layer_cross_v.data(), sizeof(float), encoder_data.n_layer_cross_v.size(), fp);
     // fclose(fp);
 
+    // detect language
+    SOT_SEQUENCE[1] = detect_language(language);
+
     // decoder_main
     start = clock();
     decoder_main.SetInput(SOT_SEQUENCE.data(), 0);
@@ -254,6 +292,10 @@ int main(int argc, char** argv) {
     std::copy(decoder_main_logits.begin() + 3 * WHISPER_VOCAB_SIZE, decoder_main_logits.end(), logits.begin());
     supress_tokens(logits, true);
     max_token_id = argmax(logits);
+
+    // fp = fopen("logits.bin", "wb");
+    // fwrite(logits.data(), sizeof(float),logits.size(), fp);
+    // fclose(fp);
 
     printf("First token: %d \t take %.2fms\n", max_token_id, (end - start) * 1000.f / CLOCKS_PER_SEC);
 
@@ -322,9 +364,13 @@ int main(int argc, char** argv) {
         s += str;
     }
 
-    const opencc::SimpleConverter converter("t2s.json");
-    std::string simple_str = converter.Convert(s);
-    printf("Result: %s\n", simple_str.c_str());
+    if (language == "en")
+        printf("Result: %s\n", s.c_str());
+    else {
+        const opencc::SimpleConverter converter("t2s.json");
+        std::string simple_str = converter.Convert(s);
+        printf("Result: %s\n", simple_str.c_str());
+    }
 
     return 0;
 }
