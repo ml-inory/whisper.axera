@@ -5,7 +5,7 @@
       "input_configs": [
         {
           "tensor_name": "mel",
-          "calibration_dataset": "/home/yrz/Codes/sherpa-onnx/scripts/whisper/calibrations_small/encoder/mel.tar.gz",
+          "calibration_dataset": "./calibrations_small/encoder/mel.tar.gz",
           "calibration_size": -1,
           "calibration_format": "Numpy"
         }

@@ -5,19 +5,19 @@
       "input_configs": [
         {
           "tensor_name": "tokens",
-          "calibration_dataset": "/home/yrz/Codes/sherpa-onnx/scripts/whisper/calibrations_small/decoder_main/tokens.tar.gz",
+          "calibration_dataset": "./calibrations_small/decoder_main/tokens.tar.gz",
           "calibration_size": -1,
           "calibration_format": "Numpy"
         },
         {
           "tensor_name": "n_layer_cross_k",
-          "calibration_dataset": "/home/yrz/Codes/sherpa-onnx/scripts/whisper/calibrations_small/decoder_main/n_layer_cross_k.tar.gz",
+          "calibration_dataset": "./calibrations_small/decoder_main/n_layer_cross_k.tar.gz",
           "calibration_size": -1,
           "calibration_format": "Numpy"
         },
         {
           "tensor_name": "n_layer_cross_v",
-          "calibration_dataset": "/home/yrz/Codes/sherpa-onnx/scripts/whisper/calibrations_small/decoder_main/n_layer_cross_v.tar.gz",
+          "calibration_dataset": "./calibrations_small/decoder_main/n_layer_cross_v.tar.gz",
           "calibration_size": -1,
           "calibration_format": "Numpy"
         }

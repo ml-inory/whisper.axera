@@ -5,43 +5,43 @@
       "input_configs": [
         {
           "tensor_name": "tokens",
-          "calibration_dataset": "/home/yrz/Codes/sherpa-onnx/scripts/whisper/calibrations_small/decoder_loop/tokens.tar.gz",
+          "calibration_dataset": "./calibrations_small/decoder_loop/tokens.tar.gz",
           "calibration_size": -1,
           "calibration_format": "Numpy"
         },
         {
           "tensor_name": "n_layer_cross_k",
-          "calibration_dataset": "/home/yrz/Codes/sherpa-onnx/scripts/whisper/calibrations_small/decoder_loop/n_layer_cross_k.tar.gz",
+          "calibration_dataset": "./calibrations_small/decoder_loop/n_layer_cross_k.tar.gz",
           "calibration_size": -1,
           "calibration_format": "Numpy"
         },
         {
           "tensor_name": "in_n_layer_self_k_cache",
-          "calibration_dataset": "/home/yrz/Codes/sherpa-onnx/scripts/whisper/calibrations_small/decoder_loop/n_layer_self_k_cache.tar.gz",
+          "calibration_dataset": "./calibrations_small/decoder_loop/n_layer_self_k_cache.tar.gz",
           "calibration_size": -1,
           "calibration_format": "Numpy"
         },
         {
           "tensor_name": "in_n_layer_self_v_cache",
-          "calibration_dataset": "/home/yrz/Codes/sherpa-onnx/scripts/whisper/calibrations_small/decoder_loop/n_layer_self_v_cache.tar.gz",
+          "calibration_dataset": "./calibrations_small/decoder_loop/n_layer_self_v_cache.tar.gz",
           "calibration_size": -1,
           "calibration_format": "Numpy"
         },
         {
           "tensor_name": "n_layer_cross_v",
-          "calibration_dataset": "/home/yrz/Codes/sherpa-onnx/scripts/whisper/calibrations_small/decoder_loop/n_layer_cross_v.tar.gz",
+          "calibration_dataset": "./calibrations_small/decoder_loop/n_layer_cross_v.tar.gz",
           "calibration_size": -1,
           "calibration_format": "Numpy"
         },
         {
           "tensor_name": "positional_embedding",
-          "calibration_dataset": "/home/yrz/Codes/sherpa-onnx/scripts/whisper/calibrations_small/decoder_loop/positional_embedding.tar.gz",
+          "calibration_dataset": "./calibrations_small/decoder_loop/positional_embedding.tar.gz",
           "calibration_size": -1,
           "calibration_format": "Numpy"
         },
         {
           "tensor_name": "mask",
-          "calibration_dataset": "/home/yrz/Codes/sherpa-onnx/scripts/whisper/calibrations_small/decoder_loop/mask.tar.gz",
+          "calibration_dataset": "./calibrations_small/decoder_loop/mask.tar.gz",
           "calibration_size": -1,
           "calibration_format": "Numpy"
         }
