@@ -7,6 +7,7 @@
 #include <ax_sys_api.h>
 #include <unordered_map>
 #include <ctime>
+#include <sys/time.h>
 
 #include "cmdline.hpp"
 #include "AudioFile.h"
@@ -87,6 +88,13 @@ static int detect_language(const std::string& language) {
     return WHISPER_LANG_CODES[i];
 }
 
+static double get_current_time()
+{
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+
+    return tv.tv_sec * 1000.0 + tv.tv_usec / 1000.0;
+}
 
 int main(int argc, char** argv) {
     cmdline::parser cmd;
@@ -203,34 +211,35 @@ int main(int argc, char** argv) {
     Encoder encoder;
     DecoderMain decoder_main;
     DecoderLoop decoder_loop;
-    clock_t start, end;
+    double start, end;
+    double start_all, end_all;
 
-    start = clock();
+    start = get_current_time();
     ret = encoder.Init(encoder_file.c_str());
     if (ret) {
         printf("encoder init failed!\n");
         return ret;
     }
-    end = clock();
-    printf("Load encoder take %.2f ms\n", (end - start) * 1000.f / CLOCKS_PER_SEC);
+    end = get_current_time();
+    printf("Load encoder take %.2f ms\n", (end - start));
 
-    start = clock();
+    start = get_current_time();
     ret = decoder_main.Init(decoder_main_file.c_str());
     if (ret) {
         printf("decoder_main init failed!\n");
         return ret;
     }
-    end = clock();
-    printf("Load decoder_main take %.2f ms\n", (end - start) * 1000.f / CLOCKS_PER_SEC);
+    end = get_current_time();
+    printf("Load decoder_main take %.2f ms\n", (end - start));
 
-    start = clock();
+    start = get_current_time();
     ret = decoder_loop.Init(decoder_loop_file.c_str());
     if (ret) {
         printf("decoder_loop init failed!\n");
         return ret;
     }
-    end = clock();
-    printf("Load decoder_loop take %.2f ms\n", (end - start) * 1000.f / CLOCKS_PER_SEC);
+    end = get_current_time();
+    printf("Load decoder_loop take %.2f ms\n", (end - start));
 
     int offset = 0;
     std::vector<float> logits(WHISPER_VOCAB_SIZE);
@@ -256,12 +265,16 @@ int main(int argc, char** argv) {
     // fwrite(continous_mel.data(), sizeof(float), continous_mel.size(), fp);
     // fclose(fp);
 
+    start = get_current_time();
+    start_all = get_current_time();
     encoder.SetInput(continous_mel.data(), 0);
     ret = encoder.Run();
     if (ret) {
         printf("encoder run failed!\n");
         return ret;
     }
+	end = get_current_time();
+    printf("Encoder run take %.2f ms\n", (end - start));
     // encoder.GetOutput(n_layer_cross_k.data(), 0);
     // encoder.GetOutput(n_layer_cross_v.data(), 1);
 
@@ -277,7 +290,7 @@ int main(int argc, char** argv) {
     SOT_SEQUENCE[1] = detect_language(language);
 
     // decoder_main
-    start = clock();
+    start = get_current_time();
     decoder_main.SetInput(SOT_SEQUENCE.data(), 0);
     decoder_main.SetInput(encoder.GetOutputPtr(0), 1);
     decoder_main.SetInput(encoder.GetOutputPtr(1), 2);
@@ -289,7 +302,7 @@ int main(int argc, char** argv) {
     decoder_main.GetOutput(decoder_main_logits.data(), 0);
     // decoder_main.GetOutput(n_layer_self_k_cache.data(), 1);
     // decoder_main.GetOutput(n_layer_self_v_cache.data(), 2);
-    end = clock();
+    end = get_current_time();
 
     offset += SOT_SEQUENCE.size();
     // logits = logits[0, -1]
@@ -301,7 +314,7 @@ int main(int argc, char** argv) {
     // fwrite(logits.data(), sizeof(float),logits.size(), fp);
     // fclose(fp);
 
-    printf("First token: %d \t take %.2fms\n", max_token_id, (end - start) * 1000.f / CLOCKS_PER_SEC);
+    printf("First token: %d \t take %.2fms\n", max_token_id, (end - start));
 
     std::vector<float> mask(WHISPER_N_TEXT_CTX);
     for (int n = 0; n < WHISPER_N_TEXT_CTX - offset - 1; n++) {
@@ -327,7 +340,7 @@ int main(int argc, char** argv) {
         // mask[:model.n_text_ctx - offset[0] - 1] = -torch.inf
        
         // inference
-        start = clock();
+        start = get_current_time();
         decoder_loop.SetInput(tokens.data(), 0);
         // decoder_loop.SetInput(n_layer_cross_k.data(), 3);
         // decoder_loop.SetInput(n_layer_cross_v.data(), 4);
@@ -350,10 +363,14 @@ int main(int argc, char** argv) {
 
         supress_tokens(logits, false);
         max_token_id = argmax(logits);  
-        end = clock();  
+        end = get_current_time();  
 
-        printf("Next Token: %d \t take %.2fms\n", max_token_id, (end - start) * 1000.f / CLOCKS_PER_SEC);
+        printf("Next Token: %d \t take %.2fms\n", max_token_id, (end - start));
     }
+	
+    end_all = get_current_time(); 
+    printf("All take %.2f ms\n", (end_all - start_all));
+	
 
     // fp = fopen("n_layer_cross_k.bin", "wb");
     // fwrite(encoder_data.n_layer_cross_k.data(), sizeof(float), encoder_data.n_layer_cross_k.size(), fp);
@@ -380,4 +397,3 @@ int main(int argc, char** argv) {
 
     return 0;
 }
-    
