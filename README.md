@@ -48,7 +48,7 @@ export PATH=$PATH:/opt/site-packages/local/bin
 
 ```
 cd python  
-python3 whisper.py --model_path ../models --model_type small--wav ../demo.wav
+python3 whisper.py --model_path ../models --model_type small --wav ../demo.wav
 ```  
 
 输出结果
@@ -82,7 +82,7 @@ cd cpp
 或  
 
 ```
-./install/whisper --model_type small -e ../small-encoder.axmodel -m ../small-decoder-main.axmodel -l ../small-decoder-loop.axmodel -w ../demo.wav  -p ../small-positional_embedding.bin -t ../small-tokens.txt
+./install/whisper --model_type small --model_path ../models -w ../demo.wav
 ```
 
 输出结果
