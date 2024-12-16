@@ -93,7 +93,7 @@ def load_models(model_path, model_type):
 
 def compute_feature(wav_path, n_mels = WHISPER_N_MELS):
     sample, _ = load_audio(wav_path)
-    sample.tofile("sample.bin")
+    # sample.tofile("sample.bin")
 
     mel = librosa.feature.melspectrogram(y=sample, sr=WHISPER_SAMPLE_RATE, n_fft=WHISPER_N_FFT, hop_length=WHISPER_HOP_LENGTH, window="hann", center=True, pad_mode="reflect", power=2.0, n_mels=n_mels)
     log_spec = np.log10(np.maximum(mel, 1e-10))
@@ -143,7 +143,7 @@ def main():
 
     # Preprocess
     mel = compute_feature(wav_path, n_mels=WHISPER_N_MELS)
-    mel.tofile("mel.bin")
+    # mel.tofile("mel.bin")
 
     # Run encoder
     start = time.time()
@@ -151,8 +151,8 @@ def main():
     n_layer_cross_k, n_layer_cross_v = x["n_layer_cross_k"], x["n_layer_cross_v"]
     print(f"Run encoder take {(time.time() - start) * 1000}ms")
 
-    n_layer_cross_k.tofile("n_layer_cross_k.bin")
-    n_layer_cross_v.tofile("n_layer_cross_v.bin")
+    # n_layer_cross_k.tofile("n_layer_cross_k.bin")
+    # n_layer_cross_v.tofile("n_layer_cross_v.bin")
 
     # Run decoder_main
     start = time.time()
@@ -167,7 +167,7 @@ def main():
     # Decode token
     logits = logits[0, -1, :]
     logits = supress_tokens(logits, is_initial=True)
-    logits.tofile("logits.bin")
+    # logits.tofile("logits.bin")
     max_token_id = np.argmax(logits)
     output_tokens = []
     print(f"First token: {max_token_id}")
