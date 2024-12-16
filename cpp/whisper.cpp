@@ -16,6 +16,7 @@
 #include "DecoderLoop.hpp"
 #include "base64.h"
 #include "opencc.h"
+#include "utilities/file.hpp"
 
 #define WHISPER_SAMPLE_RATE 16000
 #define WHISPER_N_FFT       400
@@ -96,25 +97,94 @@ static double get_current_time()
     return tv.tv_sec * 1000.0 + tv.tv_usec / 1000.0;
 }
 
+static bool load_models(const std::string& model_path, const std::string& model_type, 
+            Encoder& encoder, DecoderMain& decoder_main, DecoderLoop& decoder_loop, std::vector<float>& positional_embedding, std::vector<std::string>& token_tables) {
+    std::string model_path_ = model_path;
+    if (model_path_[model_path_.size() - 1] != '/') {
+        model_path_ += "/";
+    }
+    std::string encoder_path = model_path_ + model_type + "-encoder.axmodel";
+    std::string decoder_main_path = model_path_ + model_type + "-decoder-main.axmodel";
+    std::string decoder_loop_path = model_path_ + model_type + "-decoder-loop.axmodel";
+    std::string pe_path = model_path_ + model_type + "-positional_embedding.bin";
+    std::string token_path = model_path_ + model_type + "-tokens.txt";
+
+    int ret = 0;
+    int WHISPER_N_TEXT_STATE = WHISPER_N_TEXT_STATE_MAP[model_type];
+
+    if (!utilities::exists(encoder_path)) {
+        printf("model (%s) NOT exist!\n", encoder_path.c_str());
+        return false;
+    }
+    if (!utilities::exists(decoder_main_path)) {
+        printf("model (%s) NOT exist!\n", decoder_main_path.c_str());
+        return false;
+    }
+    if (!utilities::exists(decoder_loop_path)) {
+        printf("model (%s) NOT exist!\n", decoder_loop_path.c_str());
+        return false;
+    }
+    if (!utilities::exists(pe_path)) {
+        printf("positional_embedding (%s) NOT exist!\n", pe_path.c_str());
+        return false;
+    }
+    if (!utilities::exists(token_path)) {
+        printf("token (%s) NOT exist!\n", token_path.c_str());
+        return false;
+    }
+
+    ret = encoder.Init(encoder_path.c_str());
+    if (ret) {
+        printf("encoder init failed!\n");
+        return false;
+    }
+
+    ret = decoder_main.Init(decoder_main_path.c_str());
+    if (ret) {
+        printf("decoder_main init failed!\n");
+        return false;
+    }
+
+    ret = decoder_loop.Init(decoder_loop_path.c_str());
+    if (ret) {
+        printf("decoder_loop init failed!\n");
+        return false;
+    }
+
+    positional_embedding.resize(WHISPER_N_TEXT_CTX * WHISPER_N_TEXT_STATE);
+    FILE* fp = fopen(pe_path.c_str(), "rb");
+    if (!fp) {
+        fprintf(stderr, "Can NOT open %s\n", pe_path.c_str());
+        return false;
+    }
+    fread(positional_embedding.data(), sizeof(float), WHISPER_N_TEXT_CTX * WHISPER_N_TEXT_STATE, fp);
+    fclose(fp);
+
+    std::ifstream ifs(token_path);
+    if (!ifs.is_open()) {
+        fprintf(stderr, "Can NOT open %s\n", token_path.c_str());
+        return false;
+    }
+    std::string line;
+    while (std::getline(ifs, line)) {
+        size_t i = line.find(' ');
+        token_tables.push_back(line.substr(0, i));
+    }
+
+    return true;
+}
+
 int main(int argc, char** argv) {
     cmdline::parser cmd;
-    cmd.add<std::string>("encoder", 'e', "encoder axmodel", false, "../models/small-encoder.axmodel");
-    cmd.add<std::string>("decoder_main", 'm', "decoder_main axmodel", false, "../models/small-decoder-main.axmodel");
-    cmd.add<std::string>("decoder_loop", 'l', "decoder_loop axmodel", false, "../models/small-decoder-loop.axmodel");
-    cmd.add<std::string>("position_embedding", 'p', "position_embedding.bin", false, "../models/small-positional_embedding.bin");
-    cmd.add<std::string>("token", 't', "tokens txt", false, "../models/small-tokens.txt");
     cmd.add<std::string>("wav", 'w', "wav file", true, "");
     cmd.add<std::string>("model_type", 0, "tiny, small, large", false, "small");
+    cmd.add<std::string>("model_path", 'p', "model path for *.axmodel, tokens.txt, positional_embedding.bin", false, "../models");
     cmd.add<std::string>("language", 0, "en, zh", false, "zh");
     cmd.parse_check(argc, argv);
 
     // 0. get app args, can be removed from user's app
-    auto encoder_file = cmd.get<std::string>("encoder");
-    auto decoder_main_file = cmd.get<std::string>("decoder_main");
-    auto decoder_loop_file = cmd.get<std::string>("decoder_loop");
-    auto pe_file = cmd.get<std::string>("position_embedding");
-    auto token_file = cmd.get<std::string>("token");
     auto wav_file = cmd.get<std::string>("wav");
+    auto model_path = cmd.get<std::string>("model_path");
     auto model_type = cmd.get<std::string>("model_type");
     auto language = cmd.get<std::string>("language");
 
@@ -131,6 +201,7 @@ int main(int argc, char** argv) {
         return -1;
     }
 
+#if defined(CHIP_AX650)
     AX_ENGINE_NPU_ATTR_T npu_attr;
     memset(&npu_attr, 0, sizeof(npu_attr));
     npu_attr.eHardMode = static_cast<AX_ENGINE_NPU_MODE_T>(0);
@@ -139,12 +210,32 @@ int main(int argc, char** argv) {
         fprintf(stderr, "Init ax-engine failed{0x%8x}.\n", ret);
         return -1;
     }
+#else
+    AX_ENGINE_NPU_ATTR_T npu_attr;
+    memset(&npu_attr, 0, sizeof(npu_attr));
+    npu_attr.eHardMode = AX_ENGINE_VIRTUAL_NPU_DISABLE;
+    ret = AX_ENGINE_Init(&npu_attr);
+    if (0 != ret) {
+        fprintf(stderr, "Init ax-engine failed{0x%8x}.\n", ret);
+        return -1;
+    }
+#endif    
 
-    printf("encoder: %s\n", encoder_file.c_str());
-    printf("decoder_main: %s\n", decoder_main_file.c_str());
-    printf("decoder_loop: %s\n", decoder_loop_file.c_str());
     printf("wav_file: %s\n", wav_file.c_str());
+    printf("model_path: %s\n", model_path.c_str());
+    printf("model_type: %s\n", model_type.c_str());
     printf("language: %s\n", language.c_str());
+
+    // Load models
+    Encoder encoder;
+    DecoderMain decoder_main;
+    DecoderLoop decoder_loop;
+    std::vector<float> positional_embedding;
+    std::vector<std::string> token_tables;
+    if (!load_models(model_path, model_type, encoder, decoder_main, decoder_loop, positional_embedding, token_tables)) {
+        printf("load models failed!\n");
+        return -1;
+    }
 
     AudioFile<float> audio_file;
     if (!audio_file.load(wav_file)) {
@@ -154,28 +245,6 @@ int main(int argc, char** argv) {
 
     auto& samples = audio_file.samples[0];
     int n_samples = samples.size();
-
-    printf("Read positional_embedding\n");
-    std::vector<float> positional_embedding(WHISPER_N_TEXT_CTX * WHISPER_N_TEXT_STATE);
-    FILE* fp = fopen(pe_file.c_str(), "rb");
-    if (!fp) {
-        fprintf(stderr, "Can NOT open %s\n", pe_file.c_str());
-        return -1;
-    }
-    fread(positional_embedding.data(), sizeof(float), WHISPER_N_TEXT_CTX * WHISPER_N_TEXT_STATE, fp);
-    fclose(fp);
-
-    std::vector<std::string> token_tables;
-    std::ifstream ifs(token_file);
-    if (!ifs.is_open()) {
-        fprintf(stderr, "Can NOT open %s\n", token_file.c_str());
-        return -1;
-    }
-    std::string line;
-    while (std::getline(ifs, line)) {
-        size_t i = line.find(' ');
-        token_tables.push_back(line.substr(0, i));
-    }
 
     auto mel = librosa::Feature::melspectrogram(samples, WHISPER_SAMPLE_RATE, WHISPER_N_FFT, WHISPER_HOP_LENGTH, "hann", true, "reflect", 2.0f, WHISPER_N_MELS, 0.0f, WHISPER_SAMPLE_RATE / 2.0f);
     int n_mel = mel.size();
@@ -208,38 +277,9 @@ int main(int argc, char** argv) {
     // }
     // fclose(fp);
 
-    Encoder encoder;
-    DecoderMain decoder_main;
-    DecoderLoop decoder_loop;
+    
     double start, end;
     double start_all, end_all;
-
-    start = get_current_time();
-    ret = encoder.Init(encoder_file.c_str());
-    if (ret) {
-        printf("encoder init failed!\n");
-        return ret;
-    }
-    end = get_current_time();
-    printf("Load encoder take %.2f ms\n", (end - start));
-
-    start = get_current_time();
-    ret = decoder_main.Init(decoder_main_file.c_str());
-    if (ret) {
-        printf("decoder_main init failed!\n");
-        return ret;
-    }
-    end = get_current_time();
-    printf("Load decoder_main take %.2f ms\n", (end - start));
-
-    start = get_current_time();
-    ret = decoder_loop.Init(decoder_loop_file.c_str());
-    if (ret) {
-        printf("decoder_loop init failed!\n");
-        return ret;
-    }
-    end = get_current_time();
-    printf("Load decoder_loop take %.2f ms\n", (end - start));
 
     int offset = 0;
     std::vector<float> logits(WHISPER_VOCAB_SIZE);

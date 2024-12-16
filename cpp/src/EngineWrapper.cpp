@@ -12,7 +12,14 @@
 
 #include <cstdlib>
 
-static const char *strAlgoModelType[AX_ENGINE_MODEL_TYPE_BUTT] = {"3.6T", "7.2T", "10.8T"};
+#if defined(CHIP_AX650)
+static const char *strAlgoModelType[AX_ENGINE_MODEL_TYPE_BUTT] = {"3.6T", "7.2T", "18T"};
+#endif
+
+#if defined(CHIP_AX630C) || defined(CHIP_AX620Q)
+static const char *strAlgoModelType[AX_ENGINE_MODEL_TYPE_BUTT] = {"HalfOCM", "FullOCM"};
+#endif
+
 
 /// @brief npu type
 typedef enum axNPU_TYPE_E {
@@ -24,6 +31,7 @@ typedef enum axNPU_TYPE_E {
     AX_BL_VNPU_2 = (1 << 4)    /* running under BIG-LITTLE VNPU2 */
 } AX_NPU_TYPE_E;
 
+#if defined(CHIP_AX650)
 static AX_S32 CheckModelVNpu(const std::string &strModel, const AX_ENGINE_MODEL_TYPE_T &eModelType, const AX_S32 &nNpuType, AX_U32 &nNpuSet) {
     AX_ENGINE_NPU_ATTR_T stNpuAttr;
     memset(&stNpuAttr, 0x00, sizeof(stNpuAttr));
@@ -118,6 +126,52 @@ static AX_S32 CheckModelVNpu(const std::string &strModel, const AX_ENGINE_MODEL_
 
     return ret;
 }
+#endif
+
+#if defined(CHIP_AX630C) || defined(CHIP_AX620Q)
+static AX_S32 CheckModelVNpu(const std::string &strModel, const AX_ENGINE_MODEL_TYPE_T &eModelType, const AX_S32 &nNpuType, AX_U32 &nNpuSet) {
+    AX_ENGINE_NPU_ATTR_T stNpuAttr;
+    memset(&stNpuAttr, 0x00, sizeof(stNpuAttr));
+
+    auto ret = AX_ENGINE_GetVNPUAttr(&stNpuAttr);
+    if (ret == 0) {
+        // VNPU DISABLE
+        if (stNpuAttr.eHardMode == AX_ENGINE_VIRTUAL_NPU_DISABLE) {
+            nNpuSet = 0x01; // NON-VNPU (0b111)
+            // ALOGN("%s will run under VNPU-DISABLE [%s]", strModel.c_str(), strAlgoModelType[eModelType]);
+        }
+        // STD VNPU
+        else if (stNpuAttr.eHardMode == AX_ENGINE_VIRTUAL_NPU_ENABLE) {
+            // full ocm model was no allowned
+            if (eModelType == AX_ENGINE_MODEL_TYPE1) {
+                // printf("%s model type%d: [%s], no allow run under STD VNPU", strModel.c_str(), eModelType, strAlgoModelType[eModelType]);
+                return -1;
+            }
+
+            // default STD VNPU2
+            if (nNpuType == 0) {
+                nNpuSet = 0x02; // VNPU2 (0b010)
+                // printf("%s will run under default STD-VNPU2 [%s]", strModel.c_str(), strAlgoModelType[eModelType]);
+            }
+            else {
+                if (nNpuType & AX_STD_VNPU_1) {
+                    nNpuSet |= 0x01; // VNPU1 (0b001)
+                    // printf("%s will run under STD-VNPU1 [%s]", strModel.c_str(), strAlgoModelType[eModelType]);
+                }
+                if (nNpuType & AX_STD_VNPU_2) {
+                    nNpuSet |= 0x02; // VNPU2 (0b010)
+                    // printf("%s will run under STD-VNPU2 [%s]", strModel.c_str(), strAlgoModelType[eModelType]);
+                }
+            }
+        }
+    }
+    else {
+        printf("AX_ENGINE_GetVNPUAttr fail ret = %x", ret);
+    }
+
+    return ret;
+}
+#endif
 
 
 int EngineWrapper::Init(const char* strModelPath, uint32_t nNpuType)
