@@ -48,14 +48,22 @@ export PATH=$PATH:/opt/site-packages/local/bin
 
 ```
 cd python  
-python3 whisper.py --model_path ../models --model_type small --wav ../demo.wav
+python3 whisper.py --model_type small --model_path ../models --wav ../demo.wav --language zh
 ```  
 
 输出结果
 
 ```
-
+甚至出现交易几乎停滞的情况
 ```
+
+运行参数说明:  
+| 参数名称 | 说明 | 默认值 |
+| --- | --- | --- |
+| --wav | 输入音频文件 | |
+| --model_type/-t | 模型类型, tiny/small | |
+| --model_path/-p | 模型所在目录 | ../models |
+| --language/-l | 识别语言 | zh |
 
 ### 示例
 

@@ -8,6 +8,7 @@ import soundfile as sf
 import base64
 import zhconv
 import time
+from languages import WHISPER_LANGUAGES
 
 
 WHISPER_N_MELS      = 80
@@ -26,7 +27,7 @@ WHISPER_VOCAB_SIZE    = 51865
 WHISPER_N_TEXT_CTX    = 448
 
 NEG_INF = float("-inf")
-SOT_SEQUENCE = np.array([WHISPER_SOT,50260,WHISPER_TRANSCRIBE,WHISPER_NO_TIMESTAMPS], dtype=np.int32)
+SOT_SEQUENCE = np.array([WHISPER_SOT,WHISPER_SOT + 1 + tuple(WHISPER_LANGUAGES).index("zh"),WHISPER_TRANSCRIBE,WHISPER_NO_TIMESTAMPS], dtype=np.int32)
 WHISPER_N_TEXT_STATE_MAP = {
     "tiny": 384,
     "small": 768
@@ -41,6 +42,7 @@ def get_args():
     parser.add_argument("--wav", "-w", type=str, required=True, help="Input audio file")
     parser.add_argument("--model_type", "-t", type=str, choices=["tiny", "small"], required=True, help="model type, only support tiny or small currently")
     parser.add_argument("--model_path", "-p", type=str, required=False, default="../models", help="model path for *.axmodel, tokens.txt, positional_embedding.bin")
+    parser.add_argument("--language", "-l", type=str, required=False, default="zh", help="Target language, support en, zh, ja, and others. See languages.py for more options.")
     return parser.parse_args()
 
 
@@ -48,6 +50,7 @@ def print_args(args):
     print(f"wav: {args.wav}")
     print(f"model_type: {args.model_type}")
     print(f"model_path: {args.model_path}")
+    print(f"language: {args.language}")
 
 
 def load_audio(filename: str) -> Tuple[np.ndarray, int]:
@@ -129,6 +132,12 @@ def supress_tokens(logits, is_initial):
     return logits
 
 
+def choose_language(lang):
+    if lang not in WHISPER_LANGUAGES.keys():
+        raise Exception(f"Unknown language: {lang}. Check languages.py for correct options.")
+    SOT_SEQUENCE[1] = WHISPER_SOT + 1 + tuple(WHISPER_LANGUAGES.keys()).index(lang)
+
+
 def main():
     args = get_args()
     print_args(args)
@@ -136,6 +145,9 @@ def main():
     # Check wav existence
     wav_path = args.wav
     assert os.path.exists(wav_path), f"{wav_path} NOT exist"
+
+    # Choose language
+    choose_language(args.language)
 
     # Load models and other stuff
     encoder, decoder_main, decoder_loop, pe, token_table = load_models(args.model_path, args.model_type)
@@ -210,7 +222,10 @@ def main():
     for i in output_tokens:
         s += base64.b64decode(token_table[i])
     # print(s.decode().strip())
-    pd = zhconv.convert(s.decode().strip(), 'zh-hans')
+    pd = s.decode().strip()
+    if args.language == "zh":
+        pd = zhconv.convert(pd, 'zh-hans')
+
     print(f"Result: {pd}")
 
 
