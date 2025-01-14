@@ -179,7 +179,7 @@ int EngineWrapper::Init(const char* strModelPath, uint32_t nNpuType)
     AX_S32 ret = 0;
 
     // 1. load model
-    AX_BOOL bLoadModelUseCmm = AX_FALSE;
+    AX_BOOL bLoadModelUseCmm = AX_TRUE;
     AX_CHAR *pModelBufferVirAddr = nullptr;
     AX_U64 u64ModelBufferPhyAddr = 0;
     AX_U32 nModelBufferSize = 0;

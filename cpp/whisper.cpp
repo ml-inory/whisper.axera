@@ -108,6 +108,7 @@ static bool load_models(const std::string& model_path, const std::string& model_
     std::string decoder_loop_path = model_path_ + model_type + "-decoder-loop.axmodel";
     std::string pe_path = model_path_ + model_type + "-positional_embedding.bin";
     std::string token_path = model_path_ + model_type + "-tokens.txt";
+    double start, end;
 
     int ret = 0;
     int WHISPER_N_TEXT_STATE = WHISPER_N_TEXT_STATE_MAP[model_type];
@@ -133,23 +134,32 @@ static bool load_models(const std::string& model_path, const std::string& model_
         return false;
     }
 
+    start = get_current_time();
     ret = encoder.Init(encoder_path.c_str());
     if (ret) {
         printf("encoder init failed!\n");
         return false;
     }
+    end = get_current_time();
+    printf("Load encoder take %.2fms\n", end - start);
 
+    start = get_current_time();
     ret = decoder_main.Init(decoder_main_path.c_str());
     if (ret) {
         printf("decoder_main init failed!\n");
         return false;
     }
+    end = get_current_time();
+    printf("Load decoder_main take %.2fms\n", end - start);
 
+    start = get_current_time();
     ret = decoder_loop.Init(decoder_loop_path.c_str());
     if (ret) {
         printf("decoder_loop init failed!\n");
         return false;
     }
+    end = get_current_time();
+    printf("Load decoder_loop take %.2fms\n", end - start);
 
     positional_embedding.resize(WHISPER_N_TEXT_CTX * WHISPER_N_TEXT_STATE);
     FILE* fp = fopen(pe_path.c_str(), "rb");
@@ -232,10 +242,15 @@ int main(int argc, char** argv) {
     DecoderLoop decoder_loop;
     std::vector<float> positional_embedding;
     std::vector<std::string> token_tables;
+
+    double start_load, end_load;
+    start_load = get_current_time();
     if (!load_models(model_path, model_type, encoder, decoder_main, decoder_loop, positional_embedding, token_tables)) {
         printf("load models failed!\n");
         return -1;
     }
+    end_load = get_current_time();
+    printf("load models take %.2f ms\n", end_load - start_load);
 
     AudioFile<float> audio_file;
     if (!audio_file.load(wav_file)) {
