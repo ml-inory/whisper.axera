@@ -30,6 +30,7 @@ NEG_INF = float("-inf")
 SOT_SEQUENCE = np.array([WHISPER_SOT,WHISPER_SOT + 1 + tuple(WHISPER_LANGUAGES).index("zh"),WHISPER_TRANSCRIBE,WHISPER_NO_TIMESTAMPS], dtype=np.int32)
 WHISPER_N_TEXT_STATE_MAP = {
     "tiny": 384,
+    "base": 512,
     "small": 768
 }
 
