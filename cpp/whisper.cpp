@@ -54,6 +54,7 @@ static std::vector<std::string> WHISPER_LANG_NAMES{
 
 static std::unordered_map<std::string, int> WHISPER_N_TEXT_STATE_MAP{
     {"tiny",    384},
+    {"base",    512},
     {"small",   768}
 };
 
@@ -187,7 +188,7 @@ static bool load_models(const std::string& model_path, const std::string& model_
 int main(int argc, char** argv) {
     cmdline::parser cmd;
     cmd.add<std::string>("wav", 'w', "wav file", true, "");
-    cmd.add<std::string>("model_type", 0, "tiny, small, large", false, "small");
+    cmd.add<std::string>("model_type", 0, "tiny, base, small, large", false, "small");
     cmd.add<std::string>("model_path", 'p', "model path for *.axmodel, tokens.txt, positional_embedding.bin", false, "../models");
     cmd.add<std::string>("language", 0, "en, zh", false, "zh");
     cmd.parse_check(argc, argv);
