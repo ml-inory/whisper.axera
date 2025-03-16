@@ -1,5 +1,5 @@
 import argparse
-from axengine import InferenceSession
+import axengine as axe 
 import numpy as np
 import librosa
 import os
@@ -41,7 +41,7 @@ def get_args():
         description="Run Whisper on input audio file"
     )
     parser.add_argument("--wav", "-w", type=str, required=True, help="Input audio file")
-    parser.add_argument("--model_type", "-t", type=str, choices=["tiny", "small"], required=True, help="model type, only support tiny or small currently")
+    parser.add_argument("--model_type", "-t", type=str, choices=["tiny", "base", "small"], required=True, help="model type, only support tiny, base and small currently")
     parser.add_argument("--model_path", "-p", type=str, required=False, default="../models", help="model path for *.axmodel, tokens.txt, positional_embedding.bin")
     parser.add_argument("--language", "-l", type=str, required=False, default="zh", help="Target language, support en, zh, ja, and others. See languages.py for more options.")
     return parser.parse_args()
@@ -79,11 +79,11 @@ def load_models(model_path, model_type):
         assert os.path.exists(file_path), f"{file_path} NOT exist"
 
     # Load encoder
-    encoder = InferenceSession.load_from_model(required_files[0])
+    encoder = axe.InferenceSession(required_files[0])
     # Load decoder main
-    decoder_main = InferenceSession.load_from_model(required_files[1])
+    decoder_main = axe.InferenceSession(required_files[1])
     # Load decoder loop
-    decoder_loop = InferenceSession.load_from_model(required_files[2])
+    decoder_loop = axe.InferenceSession(required_files[2])
     # Load position embedding
     pe = np.fromfile(required_files[3], dtype=np.float32)
     # Load tokens
@@ -153,17 +153,21 @@ def main():
     choose_language(args.language)
 
     # Load models and other stuff
+    start = time.time()
     encoder, decoder_main, decoder_loop, pe, token_table = load_models(args.model_path, args.model_type)
+    print(f"Load models take {(time.time() - start) * 1000}ms")
     WHISPER_N_TEXT_STATE = WHISPER_N_TEXT_STATE_MAP[args.model_type]
 
     # Preprocess
+    start = time.time()
     mel = compute_feature(wav_path, n_mels=WHISPER_N_MELS)
+    print(f"Preprocess wav take {(time.time() - start) * 1000}ms")
     # mel.tofile("mel.bin")
 
     # Run encoder
     start = time.time()
-    x = encoder.run(input_feed={"mel": mel})
-    n_layer_cross_k, n_layer_cross_v = x["n_layer_cross_k"], x["n_layer_cross_v"]
+    x = encoder.run(None, input_feed={"mel": mel[None, ...]})
+    n_layer_cross_k, n_layer_cross_v = x
     print(f"Run encoder take {(time.time() - start) * 1000}ms")
 
     # n_layer_cross_k.tofile("n_layer_cross_k.bin")
@@ -171,12 +175,12 @@ def main():
 
     # Run decoder_main
     start = time.time()
-    x = decoder_main.run(input_feed={
-        "tokens": SOT_SEQUENCE,
+    x = decoder_main.run(None, input_feed={
+        "tokens": SOT_SEQUENCE[None, ...],
         "n_layer_cross_k": n_layer_cross_k,
         "n_layer_cross_v": n_layer_cross_v
     })
-    logits, n_layer_self_k_cache, n_layer_self_v_cache = x["logits"], x["out_n_layer_self_k_cache"], x["out_n_layer_self_v_cache"]
+    logits, n_layer_self_k_cache, n_layer_self_v_cache = x
     print(f"Run decoder_main take {(time.time() - start) * 1000}ms")
 
     # Decode token
@@ -202,16 +206,16 @@ def main():
 
         # Run decoder_loop
         start = time.time()
-        x = decoder_loop.run(input_feed={
-            "tokens": np.array([output_tokens[-1]], dtype=np.int32),
+        x = decoder_loop.run(None, input_feed={
+            "tokens": np.array([[output_tokens[-1]]], dtype=np.int32),
             "in_n_layer_self_k_cache": n_layer_self_k_cache,
             "in_n_layer_self_v_cache": n_layer_self_v_cache,
             "n_layer_cross_k": n_layer_cross_k,
             "n_layer_cross_v": n_layer_cross_v,
-            "positional_embedding": pe[offset * WHISPER_N_TEXT_STATE : (offset + 1) * WHISPER_N_TEXT_STATE],
+            "positional_embedding": pe[offset * WHISPER_N_TEXT_STATE : (offset + 1) * WHISPER_N_TEXT_STATE][None, ...],
             "mask": mask
         })
-        logits, n_layer_self_k_cache, n_layer_self_v_cache = x["logits"], x["out_n_layer_self_k_cache"], x["out_n_layer_self_v_cache"]
+        logits, n_layer_self_k_cache, n_layer_self_v_cache = x
         print(f"Run decoder_loop take {(time.time() - start) * 1000}ms")
 
         # Decode token
