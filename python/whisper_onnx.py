@@ -32,6 +32,7 @@ NEG_INF = float("-inf")
 SOT_SEQUENCE = np.array([WHISPER_SOT,WHISPER_SOT + 1 + tuple(WHISPER_LANGUAGES).index("zh"),WHISPER_TRANSCRIBE,WHISPER_NO_TIMESTAMPS], dtype=np.int64)
 WHISPER_N_TEXT_STATE_MAP = {
     "tiny": 384,
+    "base": 512,
     "small": 768
 }
 
@@ -42,7 +43,7 @@ def get_args():
         description="Run Whisper on input audio file"
     )
     parser.add_argument("--wav", "-w", type=str, required=True, help="Input audio file")
-    parser.add_argument("--model_type", "-t", type=str, choices=["tiny", "small"], required=True, help="model type, only support tiny or small currently")
+    parser.add_argument("--model_type", "-t", type=str, choices=["tiny", "base", "small"], required=True, help="model type, only support tiny/base/small currently")
     parser.add_argument("--model_path", "-p", type=str, required=False, default="../models", help="model path for *.axmodel, tokens.txt, positional_embedding.bin")
     parser.add_argument("--language", "-l", type=str, required=False, default="zh", help="Target language, support en, zh, ja, and others. See languages.py for more options.")
     return parser.parse_args()
