@@ -188,6 +188,14 @@ RTF: Real-Time Factor
 | Whisper-Base  |        | 0.35   |
 | Whisper-Small | 0.20   |        |
 
+### Word Error Rate
+
+| Models        | AX650N | AX630C |
+| ------------- | ------ | ------ |
+| Whisper-Tiny  |        |        |
+| Whisper-Base  |        |        |
+| Whisper-Small |  0.11  |        |
+
 ## 技术讨论
 
 - Github issues

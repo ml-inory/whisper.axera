@@ -1,4 +1,5 @@
 numpy==1.26.4
 soundfile
-librosa
+librosa==0.9.1
 zhconv
+jiwer
