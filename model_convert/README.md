@@ -17,8 +17,6 @@ pip install -r requirements.txt
 
 ## 导出模型（PyTorch -> ONNX）
 
-目前只支持导出 **tiny** 或 **small** 的模型，请根据需要选择
-
 导出 tiny 模型
 ```
 python export_onnx.py --model tiny
@@ -71,17 +69,17 @@ python generate_data.py --model small
 **encoder**
 
 ```
-pulsar2 build --input small-encoder.onnx --config config_whisper_encoder_u16.json --output_dir small_encoder --output_name small-encoder.axmodel --target_hardware AX650 --compiler.check 0
+pulsar2 build --input small/small-encoder.onnx --config config_whisper_encoder_u16.json --output_dir small_encoder --output_name small-encoder.axmodel --target_hardware AX650 --compiler.check 0
 ```
 
 **decoder_main**
 
 ```
-pulsar2 build --input small-decoder-main.onnx --config config_whisper_decoder_main_u16.json --output_dir small_decoder_main --output_name small-decoder-main.axmodel --target_hardware AX650 --compiler.check 0
+pulsar2 build --input small/small-decoder-main.onnx --config config_whisper_decoder_main_u16.json --output_dir small_decoder_main --output_name small-decoder-main.axmodel --target_hardware AX650 --compiler.check 0
 ```
 
 **decoder_loop**
 
 ```
-pulsar2 build --input small-decoder-loop.onnx --config config_whisper_decoder_loop_u16.json --output_dir small_decoder_loop --output_name small-decoder-loop.axmodel --target_hardware AX650 --compiler.check 0
+pulsar2 build --input small/small-decoder-loop.onnx --config config_whisper_decoder_loop_u16.json --output_dir small_decoder_loop --output_name small-decoder-loop.axmodel --target_hardware AX650 --compiler.check 0
 ```

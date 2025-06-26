@@ -2,3 +2,9 @@ ax650n_bsp_sdk
 build
 install
 __pycache__
+model_convert/calibrations_*
+model_convert/datasets
+model_convert/datasets.zip
+model_convert/small
+model_convert/datasets
+model_convert/datasets

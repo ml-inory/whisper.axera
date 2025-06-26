@@ -8,10 +8,10 @@ import soundfile as sf
 import base64
 import zhconv
 import time
-import torch
 from torch.nn import functional as F
 from languages import WHISPER_LANGUAGES
 
+print("Available providers:", ort.get_available_providers())
 
 WHISPER_N_MELS      = 80
 WHISPER_SAMPLE_RATE = 16000
@@ -81,11 +81,11 @@ def load_models(model_path, model_type):
         assert os.path.exists(file_path), f"{file_path} NOT exist"
 
     # Load encoder
-    encoder = ort.InferenceSession(required_files[0], providers=['CPUExecutionProvider'])
+    encoder = ort.InferenceSession(required_files[0], providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
     # Load decoder main
-    decoder_main = ort.InferenceSession(required_files[1], providers=['CPUExecutionProvider'])
+    decoder_main = ort.InferenceSession(required_files[1], providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
     # Load decoder loop
-    decoder_loop = ort.InferenceSession(required_files[2], providers=['CPUExecutionProvider'])
+    decoder_loop = ort.InferenceSession(required_files[2], providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
     # Load position embedding
     pe = np.fromfile(required_files[3], dtype=np.float32)
     # Load tokens

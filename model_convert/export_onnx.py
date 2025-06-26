@@ -34,7 +34,7 @@ from whisper.model import (
 
 torch.set_num_threads(1)
 torch.set_num_interop_threads(1)
-
+MultiHeadAttention.use_sdpa = False
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -50,7 +50,7 @@ def get_args():
             "distil-medium.en", "distil-small.en", "distil-large-v2",
             # "distil-large-v3", # distil-large-v3 is not supported!
             # for fine-tuned models from icefall
-            "medium-aishell",
+            "medium-aishell", "turbo"
             ],
         # fmt: on
     )
@@ -144,6 +144,8 @@ class MultiHeadAttentionCross(nn.Module):
     def __init__(self, inMultiHeadAttention: MultiHeadAttention):
         super().__init__()
         self.multiHeadAttention = inMultiHeadAttention
+        if getattr(self.multiHeadAttention, "use_sdpa") is not None:
+            self.multiHeadAttention.use_sdpa = False
 
     def forward(
         self,
@@ -357,7 +359,7 @@ def convert_tokens(name, model):
             for token, rank in (line.split() for line in contents.splitlines() if line)
         }
 
-    with open(f"{name}-tokens.txt", "w") as f:
+    with open(f"{name}/{name}-tokens.txt", "w") as f:
         for t, i in tokens.items():
             f.write(f"{t} {i}\n")
 
@@ -371,61 +373,9 @@ def main():
 
     opset_version = 17
 
-    if name == "distil-medium.en":
-        filename = "./distil-medium-en-original-model.bin"
-        if not Path(filename).is_file():
-            raise ValueError(
-                """
-                Please go to https://huggingface.co/distil-whisper/distil-medium.en
-                to download original-model.bin
-                You can use the following command to do that:
-
-                wget -O distil-medium-en-original-model.bin https://huggingface.co/distil-whisper/distil-medium.en/resolve/main/original-model.bin
-            """
-            )
-        model = whisper.load_model(filename)
-    elif name == "distil-large-v2":
-        filename = "./distil-large-v2-original-model.bin"
-        if not Path(filename).is_file():
-            raise ValueError(
-                """
-                Please go to https://huggingface.co/distil-whisper/distil-large-v2
-                to download original-model.bin
-                You can use the following command to do that:
-
-                wget -O distil-large-v2-original-model.bin https://huggingface.co/distil-whisper/distil-large-v2/resolve/main/original-model.bin
-            """
-            )
-        model = whisper.load_model(filename)
-    elif name == "distil-small.en":
-        filename = "./distil-small-en-original-model.bin"
-        if not Path(filename).is_file():
-            raise ValueError(
-                """
-                Please go to https://huggingface.co/distil-whisper/distil-small.en
-                to download original-model.bin
-                You can use the following command to do that:
-
-                wget -O distil-small-en-original-model.bin https://huggingface.co/distil-whisper/distil-small.en/resolve/main/original-model.bin
-            """
-            )
-        model = whisper.load_model(filename)
-    elif name == "medium-aishell":
-        filename = "./medium-aishell.pt"
-        if not Path(filename).is_file():
-            raise ValueError(
-                """
-                Please go to https://huggingface.co/yuekai/icefall_asr_aishell_whisper/tree/main/exp_medium
-                to download whisper-medium-aishell1-epoch-10-avg-4.pt
-                You can use the following command to do that:
-
-                wget -O medium-aishell.pt https://huggingface.co/yuekai/icefall_asr_aishell_whisper/resolve/main/exp_medium/whisper-medium-aishell1-epoch-10-avg-4.pt
-            """
-            )
-        model = whisper.load_model(filename)
-    else:
-        model = whisper.load_model(name)
+    model = whisper.load_model(name)
     print(model.dims)
+    os.makedirs(name, exist_ok=True)
 
     print(
         f"number of model parameters: {name}",
@@ -454,10 +404,11 @@ def main():
     audio = whisper.pad_or_trim(audio)
     assert audio.shape == (16000 * 30,), audio.shape
 
-    if args.model in ("large", "large-v3"):
-        n_mels = 128
-    else:
-        n_mels = 80
+    # if args.model in ("large", "large-v3", "turbo"):
+    #     n_mels = 128
+    # else:
+    #     n_mels = 80
+    n_mels=model.dims.n_mels
     mel = (
         whisper.log_mel_spectrogram(audio, n_mels=n_mels).to(model.device).unsqueeze(0)
     )
@@ -480,12 +431,14 @@ def main():
         model.dims.n_text_state,
     ), (n_layer_cross_v.shape, model.dims)
 
-    encoder_filename = f"{name}-encoder.onnx"
+    encoder_filename = f"{name}/{name}-encoder.onnx"
     torch.onnx.export(
         encoder,
         mel,
         encoder_filename,
         opset_version=opset_version,
+        export_params=True,
+        do_constant_folding=True,
         input_names=["mel"],
         output_names=["n_layer_cross_k", "n_layer_cross_v"],
         # dynamic_axes={
@@ -535,7 +488,7 @@ def main():
     n_audio = mel.shape[0]
     tokens = torch.tensor([[tokenizer.sot, tokenizer.sot, tokenizer.sot, tokenizer.sot]] * n_audio).to(
         mel.device
-    )  # [n_audio, 3]
+    )  # [n_audio, 4]
     decoder = TextDecoderTensorCache(model.decoder, model.dims.n_text_ctx, loop=False)
     n_layer_self_k_cache = torch.zeros(
         (
@@ -559,7 +512,7 @@ def main():
     positional_embedding = None
     mask = None
 
-    decoder_filename = f"{name}-decoder-main.onnx"
+    decoder_filename = f"{name}/{name}-decoder-main.onnx"
     torch.onnx.export(
         decoder,
         (
@@ -573,6 +526,8 @@ def main():
         ),
         decoder_filename,
         opset_version=opset_version,
+        export_params=True,
+        do_constant_folding=True,
         input_names=[
             "tokens",
             "in_n_layer_self_k_cache",
@@ -632,7 +587,7 @@ def main():
         mask,
     )
 
-    decoder_filename = f"{name}-decoder-loop.onnx"
+    decoder_filename = f"{name}/{name}-decoder-loop.onnx"
     torch.onnx.export(
         decoder,
         (
@@ -646,6 +601,8 @@ def main():
         ),
         decoder_filename,
         opset_version=opset_version,
+        export_params=True,
+        do_constant_folding=True,
         input_names=[
             "tokens",
             "in_n_layer_self_k_cache",
@@ -665,11 +622,11 @@ def main():
         # },
     )
 
-    embed_filename = f"{name}-positional-embedding.npy"
+    embed_filename = f"{name}/{name}-positional-embedding.npy"
     import numpy as np
     pe = decoder.textDecoder.positional_embedding.cpu().numpy()
     np.save(embed_filename, pe)
-    pe.flatten().tofile(f"{name}-positional_embedding.bin")
+    pe.flatten().tofile(f"{name}/{name}-positional_embedding.bin")
 
     if "large" in args.model:
         decoder_external_filename = decoder_filename.split(".onnx")[0]
@@ -682,30 +639,8 @@ def main():
             location=decoder_external_filename + ".weights",
         )
 
-    # Generate int8 quantization models
-    # See https://onnxruntime.ai/docs/performance/model-optimizations/quantization.html#data-type-selection
-
-    # print("Generate int8 quantization models")
-
-    # encoder_filename_int8 = f"{name}-encoder.int8.onnx"
-    # quantize_dynamic(
-    #     model_input=encoder_filename,
-    #     model_output=encoder_filename_int8,
-    #     op_types_to_quantize=["MatMul"],
-    #     weight_type=QuantType.QInt8,
-    # )
-
-    # decoder_filename_int8 = f"{name}-decoder.int8.onnx"
-    # quantize_dynamic(
-    #     model_input=decoder_filename,
-    #     model_output=decoder_filename_int8,
-    #     op_types_to_quantize=["MatMul"],
-    #     weight_type=QuantType.QInt8,
-    # )
-
-
 if __name__ == "__main__":
     main()
 '''
-python3 ./export-onnx_ax_loop.py --model small
+python3 export_onnx.py --model small
 '''

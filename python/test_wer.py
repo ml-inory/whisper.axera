@@ -8,8 +8,8 @@ import soundfile as sf
 import base64
 import zhconv
 import time
-from languages import WHISPER_LANGUAGES
 import jiwer
+from languages import WHISPER_LANGUAGES
 
 
 WHISPER_N_MELS      = 80
@@ -49,7 +49,7 @@ def get_args():
 
 
 def print_args(args):
-    print(f"wav: {args.dataset}")
+    print(f"dataset: {args.dataset}")
     print(f"model_type: {args.model_type}")
     print(f"model_path: {args.model_path}")
     print(f"language: {args.language}")
@@ -156,7 +156,7 @@ def main():
     # Load models and other stuff
     start = time.time()
     encoder, decoder_main, decoder_loop, pe, token_table = load_models(args.model_path, args.model_type)
-    # print(f"Load models take {(time.time() - start) * 1000}ms")
+    print(f"Load models take {(time.time() - start) * 1000}ms")
     WHISPER_N_TEXT_STATE = WHISPER_N_TEXT_STATE_MAP[args.model_type]
 
     # jiwer
@@ -172,6 +172,7 @@ def main():
     )
 
     # Load dataset
+    dataset = args.dataset
     wav_names = []
     references = []
     with open(os.path.join(dataset, "ground_truth.txt"), "r") as f:
@@ -188,29 +189,19 @@ def main():
         wav_path = os.path.join(dataset, "aishell_S0764", wav_name + ".wav")
 
         # Preprocess
-        start = time.time()
         mel = compute_feature(wav_path, n_mels=WHISPER_N_MELS)
-        # print(f"Preprocess wav take {(time.time() - start) * 1000}ms")
-        # mel.tofile("mel.bin")
 
         # Run encoder
-        start = time.time()
         x = encoder.run(None, input_feed={"mel": mel[None, ...]})
         n_layer_cross_k, n_layer_cross_v = x
-        # print(f"Run encoder take {(time.time() - start) * 1000}ms")
-
-        # n_layer_cross_k.tofile("n_layer_cross_k.bin")
-        # n_layer_cross_v.tofile("n_layer_cross_v.bin")
 
         # Run decoder_main
-        start = time.time()
         x = decoder_main.run(None, input_feed={
             "tokens": SOT_SEQUENCE[None, ...],
             "n_layer_cross_k": n_layer_cross_k,
             "n_layer_cross_v": n_layer_cross_v
         })
         logits, n_layer_self_k_cache, n_layer_self_v_cache = x
-        # print(f"Run decoder_main take {(time.time() - start) * 1000}ms")
 
         # Decode token
         logits = logits[0, -1, :]
@@ -218,7 +209,6 @@ def main():
         # logits.tofile("logits.bin")
         max_token_id = np.argmax(logits)
         output_tokens = []
-        # print(f"First token: {max_token_id}")
 
         # Position embedding offset
         offset = SOT_SEQUENCE.shape[0]
@@ -234,7 +224,6 @@ def main():
             mask[: WHISPER_N_TEXT_CTX - offset - 1] = NEG_INF
 
             # Run decoder_loop
-            start = time.time()
             x = decoder_loop.run(None, input_feed={
                 "tokens": np.array([[output_tokens[-1]]], dtype=np.int32),
                 "in_n_layer_self_k_cache": n_layer_self_k_cache,
@@ -245,28 +234,26 @@ def main():
                 "mask": mask
             })
             logits, n_layer_self_k_cache, n_layer_self_v_cache = x
-            # print(f"Run decoder_loop take {(time.time() - start) * 1000}ms")
 
             # Decode token
             offset += 1
             logits = supress_tokens(logits.flatten(), is_initial=False)
             max_token_id = np.argmax(logits)
-
-            # print(f"Iter {i} \t Token: {max_token_id}")
         
         s = b""
         for i in output_tokens:
             s += base64.b64decode(token_table[i])
-        # print(s.decode().strip())
         hypothesis = s.decode().strip()
         if args.language == "zh":
             hypothesis = zhconv.convert(hypothesis, 'zh-hans')
+
         hyp.append(hypothesis)
 
-        # print(f"Result: {pd}")
         wer = jiwer.cer(
                     reference,
-                    hypothesis
+                    hypothesis,
+                    truth_transform=transforms,
+                    hypothesis_transform=transforms
                 )
         
         line_content = f"{wav_name}  reference: {reference}  hypothesis: {hypothesis}  WER: {wer}"

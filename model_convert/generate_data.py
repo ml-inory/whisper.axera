@@ -20,6 +20,7 @@ import soundfile as sf
 import torch
 import tarfile
 import glob
+from tqdm import tqdm
 
 
 def get_args():
@@ -36,7 +37,7 @@ def get_args():
             "distil-medium.en", "distil-small.en", "distil-large-v2",
             # "distil-large-v3", # distil-large-v3 is not supported!
             # for fine-tuned models from icefall
-            "medium-aishell",
+            "medium-aishell", "turbo"
             ],
         # fmt: on
     )
@@ -77,7 +78,7 @@ def get_args():
     parser.add_argument(
         "--max_num",
         type=int,
-        default=5,
+        default=-1,
         help="Maximum num of data",
     )
 
@@ -469,12 +470,12 @@ def min_distance(word1: str, word2: str) -> int:
 def main():
     args = get_args()
     model_type = args.model
-    max_num = max(0, args.max_num)
-    encoder_filename = f"{model_type}-encoder.onnx"
-    decoder_dynamic_filename = f"{model_type}-decoder-main.onnx"
-    decoder_static_filename = f"{model_type}-decoder-loop.onnx"
-    pe_file = f"{model_type}-positional-embedding.npy"
-    token_file = f"{model_type}-tokens.txt"
+    max_num = args.max_num
+    encoder_filename = f"{model_type}/{model_type}-encoder.onnx"
+    decoder_dynamic_filename = f"{model_type}/{model_type}-decoder-main.onnx"
+    decoder_static_filename = f"{model_type}/{model_type}-decoder-loop.onnx"
+    pe_file = f"{model_type}/{model_type}-positional-embedding.npy"
+    token_file = f"{model_type}/{model_type}-tokens.txt"
     model = OnnxModel(encoder_filename, decoder_dynamic_filename, decoder_static_filename)
 
     if args.language is not None:
@@ -512,7 +513,7 @@ def main():
     all_character_error_num = 0
     with open(args.gt_file, "r") as f:
         for i, line in enumerate(f):
-            if i >= max_num:
+            if max_num >= 0 and i >= max_num:
                 break
             line = line.strip()
             name, gt = line.split(' ')
@@ -526,8 +527,12 @@ def main():
     random.seed(0)
     random.shuffle(dataset)
 
-    for idx, data in enumerate(dataset):
-        save_data = True if idx < 16 else False
+    print(f"Generating data, total {len(dataset)}")
+    for idx, data in tqdm(enumerate(dataset)):
+        if max_num <= 0:
+            save_data = True
+        else:
+            save_data = idx < max_num
         sound_file = args.dataset_path + "/" + data["name"] + ".wav"
         print(sound_file)
         results = forward(model_type, model, sound_file, positional_embedding, save_data)
