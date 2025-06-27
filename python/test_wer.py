@@ -9,6 +9,8 @@ import base64
 import zhconv
 import time
 import jiwer
+import json
+import logging
 from languages import WHISPER_LANGUAGES
 
 
@@ -35,13 +37,157 @@ WHISPER_N_TEXT_STATE_MAP = {
     "small": 768
 }
 
+def setup_logging():
+    """配置日志系统，同时输出到控制台和文件"""
+    # 获取脚本所在目录
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    log_file = os.path.join(script_dir, "test_wer.log")
+    
+    # 配置日志格式
+    log_format = '%(asctime)s - %(levelname)s - %(message)s'
+    date_format = '%Y-%m-%d %H:%M:%S'
+    
+    # 创建logger
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+    
+    # 清除现有的handler
+    for handler in logger.handlers[:]:
+        logger.removeHandler(handler)
+    
+    # 创建文件handler
+    file_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
+    file_handler.setLevel(logging.INFO)
+    file_formatter = logging.Formatter(log_format, date_format)
+    file_handler.setFormatter(file_formatter)
+    
+    # 创建控制台handler
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_formatter = logging.Formatter(log_format, date_format)
+    console_handler.setFormatter(console_formatter)
+    
+    # 添加handler到logger
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+    
+    return logger
+
+
+class AIShellDataset:
+    def __init__(self, gt_path: str):
+        """
+        初始化数据集
+        
+        Args:
+            json_path: voice.json文件的路径
+        """
+        self.gt_path = gt_path
+        self.dataset_dir = os.path.dirname(gt_path)
+        self.voice_dir = os.path.join(self.dataset_dir, "aishell_S0764")
+        
+        # 检查必要文件和文件夹是否存在
+        assert os.path.exists(gt_path), f"gt文件不存在: {gt_path}"
+        assert os.path.exists(self.voice_dir), f"aishell_S0764文件夹不存在: {self.voice_dir}"
+        
+        # 加载数据
+        self.data = []
+        with open(gt_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                audio_path, gt = line.split(" ")
+                audio_path = os.path.join(self.voice_dir, audio_path + ".wav")
+                self.data.append({"audio_path": audio_path, "gt": gt})
+
+        # 使用logging而不是print
+        logger = logging.getLogger()
+        logger.info(f"加载了 {len(self.data)} 条数据")
+    
+    def __iter__(self):
+        """返回迭代器"""
+        self.index = 0
+        return self
+    
+    def __next__(self):
+        """返回下一个数据项"""
+        if self.index >= len(self.data):
+            raise StopIteration
+        
+        item = self.data[self.index]
+        audio_path = item["audio_path"]
+        ground_truth = item["gt"]
+        
+        self.index += 1
+        return audio_path, ground_truth
+    
+    def __len__(self):
+        """返回数据集大小"""
+        return len(self.data)
+    
+
+class CommonVoiceDataset:
+    """Common Voice数据集解析器"""
+    
+    def __init__(self, tsv_path: str):
+        """
+        初始化数据集
+        
+        Args:
+            json_path: voice.json文件的路径
+        """
+        self.tsv_path = tsv_path
+        self.dataset_dir = os.path.dirname(tsv_path)
+        self.voice_dir = os.path.join(self.dataset_dir, "clips")
+        
+        # 检查必要文件和文件夹是否存在
+        assert os.path.exists(tsv_path), f"{tsv_path}文件不存在: {tsv_path}"
+        assert os.path.exists(self.voice_dir), f"voice文件夹不存在: {self.voice_dir}"
+        
+        # 加载JSON数据
+        self.data = []
+        with open(tsv_path, 'r', encoding='utf-8') as f:
+            f.readline()
+            for line in f:
+                line = line.strip()
+                splits = line.split("\t")
+                audio_path = splits[1]
+                gt = splits[2]
+                audio_path = os.path.join(self.voice_dir, audio_path)
+                self.data.append({"audio_path": audio_path, "gt": gt})
+        
+        # 使用logging而不是print
+        logger = logging.getLogger()
+        logger.info(f"加载了 {len(self.data)} 条数据")
+    
+    def __iter__(self):
+        """返回迭代器"""
+        self.index = 0
+        return self
+    
+    def __next__(self):
+        """返回下一个数据项"""
+        if self.index >= len(self.data):
+            raise StopIteration
+        
+        item = self.data[self.index]
+        audio_path = item["audio_path"]
+        ground_truth = item["gt"]
+        
+        self.index += 1
+        return audio_path, ground_truth
+    
+    def __len__(self):
+        """返回数据集大小"""
+        return len(self.data)
 
 def get_args():
     parser = argparse.ArgumentParser(
         prog="whisper",
         description="Test WER on dataset"
     )
-    parser.add_argument("--dataset", "-d", type=str, required=True, help="Test dataset")
+    parser.add_argument("--dataset", "-d", type=str, required=True, choices=["aishell", "common_voice"], help="Test dataset")
+    parser.add_argument("--gt_path", "-g", type=str, required=True, help="Test dataset ground truth file")
+    parser.add_argument("--max_num", type=int, default=-1, required=False, help="Maximum test data num")
     parser.add_argument("--model_type", "-t", type=str, choices=["tiny", "base", "small"], required=True, help="model type, only support tiny, base and small currently")
     parser.add_argument("--model_path", "-p", type=str, required=False, default="../models", help="model path for *.axmodel, tokens.txt, positional_embedding.bin")
     parser.add_argument("--language", "-l", type=str, required=False, default="zh", help="Target language, support en, zh, ja, and others. See languages.py for more options.")
@@ -49,10 +195,13 @@ def get_args():
 
 
 def print_args(args):
-    print(f"dataset: {args.dataset}")
-    print(f"model_type: {args.model_type}")
-    print(f"model_path: {args.model_path}")
-    print(f"language: {args.language}")
+    logger = logging.getLogger()
+    logger.info(f"dataset: {args.dataset}")
+    logger.info(f"gt_path: {args.gt_path}")
+    logger.info(f"max_num: {args.max_num}")
+    logger.info(f"model_type: {args.model_type}")
+    logger.info(f"model_path: {args.model_path}")
+    logger.info(f"language: {args.language}")
 
 
 def load_audio(filename: str) -> Tuple[np.ndarray, int]:
@@ -143,12 +292,21 @@ def choose_language(lang):
 
 
 def main():
+    # 设置日志系统
+    logger = setup_logging()
+
     args = get_args()
     print_args(args)
 
-    # Check wav existence
-    dataset = args.dataset
-    assert os.path.exists(dataset), f"{dataset} NOT exist"
+    dataset_type = args.dataset.lower()
+    if dataset_type == "aishell":
+        dataset = AIShellDataset(args.gt_path)
+    elif dataset_type == "common_voice":
+        dataset = CommonVoiceDataset(args.gt_path)
+    else:
+        raise ValueError(f"Unknown dataset type {dataset_type}")
+
+    max_num = args.max_num
 
     # Choose language
     choose_language(args.language)
@@ -156,7 +314,7 @@ def main():
     # Load models and other stuff
     start = time.time()
     encoder, decoder_main, decoder_loop, pe, token_table = load_models(args.model_path, args.model_type)
-    print(f"Load models take {(time.time() - start) * 1000}ms")
+    logger.info(f"Load models take {(time.time() - start) * 1000}ms")
     WHISPER_N_TEXT_STATE = WHISPER_N_TEXT_STATE_MAP[args.model_type]
 
     # jiwer
@@ -171,25 +329,14 @@ def main():
         ]
     )
 
-    # Load dataset
-    dataset = args.dataset
-    wav_names = []
-    references = []
-    with open(os.path.join(dataset, "ground_truth.txt"), "r") as f:
-        for line in f:
-            line = line.strip()
-            w, r = line.split(" ")
-            wav_names.append(w)
-            references.append(r)
-
     # Iterate over dataset
+    references = []
     hyp = []
     wer_file = open("wer.txt", "w")
-    for wav_name, reference in zip(wav_names, references):
-        wav_path = os.path.join(dataset, "aishell_S0764", wav_name + ".wav")
-
+    max_data_num = max_num if max_num > 0 else len(dataset)
+    for n, (audio_path, reference) in enumerate(dataset):
         # Preprocess
-        mel = compute_feature(wav_path, n_mels=WHISPER_N_MELS)
+        mel = compute_feature(audio_path, n_mels=WHISPER_N_MELS)
 
         # Run encoder
         x = encoder.run(None, input_feed={"mel": mel[None, ...]})
@@ -248,7 +395,7 @@ def main():
             hypothesis = zhconv.convert(hypothesis, 'zh-hans')
 
         hyp.append(hypothesis)
-
+        references.append(reference)
         wer = jiwer.cer(
                     reference,
                     hypothesis,
@@ -256,15 +403,20 @@ def main():
                     hypothesis_transform=transforms
                 )
         
-        line_content = f"{wav_name}  reference: {reference}  hypothesis: {hypothesis}  WER: {wer}"
+        line_content = f"({n+1}/{max_data_num}) {os.path.basename(audio_path)}  reference: {reference}  hypothesis: {hypothesis}  WER: {wer}"
         wer_file.write(line_content + "\n")
-        print(line_content)
+        logger.info(line_content)
+
+        if n + 1 >= max_data_num:
+            break
 
     total_wer = jiwer.cer(
                     references,
-                    hyp
+                    hyp,
+                    truth_transform=transforms,
+                    hypothesis_transform=transforms
                 )
-    print(f"Total WER: {total_wer}")
+    logger.info(f"Total WER: {total_wer}")
     wer_file.write(f"Total WER: {total_wer}")
     wer_file.close()
 
