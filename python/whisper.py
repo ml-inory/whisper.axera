@@ -29,7 +29,7 @@ WHISPER_VOCAB_SIZE    = 51865
 WHISPER_N_TEXT_CTX    = 448
 
 NEG_INF = float("-inf")
-SOT_SEQUENCE = np.array([WHISPER_SOT,WHISPER_SOT + 1 + tuple(WHISPER_LANGUAGES).index("zh"),WHISPER_TRANSCRIBE,WHISPER_NO_TIMESTAMPS], dtype=np.int32)
+SOT_SEQUENCE = np.array([0,0,0,0], dtype=np.int32)
 WHISPER_N_TEXT_STATE_MAP = {
     "tiny": 384,
     "base": 512,
@@ -78,10 +78,9 @@ def load_models(model_path, model_type, language, task):
     decoder_main_path = f"{model_type}-decoder-main.axmodel"
     decoder_loop_path = f"{model_type}-decoder-loop.axmodel"
     pe_path = f"{model_type}-positional_embedding.bin"
-    # token_path = f"{model_type}-tokens.txt"
     model_config_file = f"{model_type}_config.json"
 
-    required_files = [os.path.join(model_path, i) for i in (encoder_path, decoder_main_path, decoder_loop_path, pe_path, model_config)]
+    required_files = [os.path.join(model_path, i) for i in (encoder_path, decoder_main_path, decoder_loop_path, pe_path, model_config_file)]
     # Check file existence
     for i, file_path in enumerate(required_files):
         assert os.path.exists(file_path), f"{file_path} NOT exist"
@@ -95,7 +94,7 @@ def load_models(model_path, model_type, language, task):
     # Load position embedding
     pe = np.fromfile(required_files[3], dtype=np.float32)
     # Load tokens
-    model_config = json.load(open(model_config_file, "r"))
+    model_config = json.load(open(required_files[4], "r"))
     model_config["all_language_tokens"] = [int(i) for i in model_config["all_language_tokens"].split(",")]
     model_config["all_language_codes"] = [i for i in model_config["all_language_codes"].split(",")]
     tokenizer = get_tokenizer(
@@ -159,14 +158,14 @@ def build_sot_sequence(lang, task, model_config):
         raise Exception(f"Unknown language: {lang}. Check whisper_tokenizer.py::LANGUAGES for correct options.")
     
     try:
-        lang_ind = LANGUAGES.index(lang)
+        lang_ind = model_config["all_language_codes"].index(lang)
         lang_token = model_config["all_language_tokens"][lang_ind]
     except:
         raise ValueError(f"Unknown language: {lang}. Check whisper_tokenizer.py::LANGUAGES for correct options.")
     
     WHISPER_TRANSLATE = model_config["translate"]
     WHISPER_TRANSCRIBE = model_config["transcribe"]
-    task_token = model_config["task"]
+    task_token = model_config[task]
 
     WHISPER_NO_TIMESTAMPS = model_config["no_timestamps"]
 
@@ -189,6 +188,9 @@ def main():
     WHISPER_N_TEXT_STATE = model_config["n_text_state"]
     WHISPER_N_TEXT_CTX = model_config["n_text_ctx"]
     WHISPER_EOT = model_config["eot"]
+    WHISPER_BLANK = model_config["blank_id"]
+    WHISPER_NO_TIMESTAMPS = model_config["no_timestamps"]
+    WHISPER_NO_SPEECH = model_config["no_speech"]
 
     # sot sequence
     build_sot_sequence(args.language, args.task, model_config)
