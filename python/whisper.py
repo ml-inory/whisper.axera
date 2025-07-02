@@ -8,7 +8,9 @@ import soundfile as sf
 import base64
 import zhconv
 import time
-from languages import WHISPER_LANGUAGES
+# from languages import WHISPER_LANGUAGES
+from whisper_tokenizer import *
+import json
 
 
 WHISPER_N_MELS      = 80
@@ -47,6 +49,7 @@ def get_args():
     parser.add_argument("--model_type", "-t", type=str, choices=["tiny", "base", "small", "large", "large-v3", "turbo"], required=True, help="model type, only support tiny, base and small currently")
     parser.add_argument("--model_path", "-p", type=str, required=False, default="../models", help="model path for *.axmodel, tokens.txt, positional_embedding.bin")
     parser.add_argument("--language", "-l", type=str, required=False, default="zh", help="Target language, support en, zh, ja, and others. See languages.py for more options.")
+    parser.add_argument("--task", type=str, required=False, choices=["translate", "transcribe"], default="transcribe")
     return parser.parse_args()
 
 
@@ -55,6 +58,7 @@ def print_args(args):
     print(f"model_type: {args.model_type}")
     print(f"model_path: {args.model_path}")
     print(f"language: {args.language}")
+    print(f"task: {args.task}")
 
 
 def load_audio(filename: str) -> Tuple[np.ndarray, int]:
@@ -69,14 +73,15 @@ def load_audio(filename: str) -> Tuple[np.ndarray, int]:
     return samples, sample_rate
 
 
-def load_models(model_path, model_type):
+def load_models(model_path, model_type, language, task):
     encoder_path = f"{model_type}-encoder.axmodel"
     decoder_main_path = f"{model_type}-decoder-main.axmodel"
     decoder_loop_path = f"{model_type}-decoder-loop.axmodel"
     pe_path = f"{model_type}-positional_embedding.bin"
-    token_path = f"{model_type}-tokens.txt"
+    # token_path = f"{model_type}-tokens.txt"
+    model_config_file = f"{model_type}_config.json"
 
-    required_files = [os.path.join(model_path, i) for i in (encoder_path, decoder_main_path, decoder_loop_path, pe_path, token_path)]
+    required_files = [os.path.join(model_path, i) for i in (encoder_path, decoder_main_path, decoder_loop_path, pe_path, model_config)]
     # Check file existence
     for i, file_path in enumerate(required_files):
         assert os.path.exists(file_path), f"{file_path} NOT exist"
@@ -90,13 +95,22 @@ def load_models(model_path, model_type):
     # Load position embedding
     pe = np.fromfile(required_files[3], dtype=np.float32)
     # Load tokens
-    tokens = []
-    with open(required_files[4], "r") as f:
-        for line in f:
-            line = line.strip()
-            tokens.append(line.split(" ")[0])
+    model_config = json.load(open(model_config_file, "r"))
+    model_config["all_language_tokens"] = [int(i) for i in model_config["all_language_tokens"].split(",")]
+    model_config["all_language_codes"] = [i for i in model_config["all_language_codes"].split(",")]
+    tokenizer = get_tokenizer(
+        model_config["is_multilingual"],
+        num_languages=len(model_config["all_language_codes"]),
+        language=language,
+        task=task,
+    )
+    # tokens = []
+    # with open(required_files[4], "r") as f:
+    #     for line in f:
+    #         line = line.strip()
+    #         tokens.append(line.split(" ")[0])
 
-    return encoder, decoder_main, decoder_loop, pe, tokens
+    return encoder, decoder_main, decoder_loop, pe, tokenizer, model_config
 
 
 def compute_feature(wav_path, n_mels = WHISPER_N_MELS, padding = 480000):
@@ -138,10 +152,26 @@ def supress_tokens(logits, is_initial):
     return logits
 
 
-def choose_language(lang):
-    if lang not in WHISPER_LANGUAGES.keys():
-        raise Exception(f"Unknown language: {lang}. Check languages.py for correct options.")
-    SOT_SEQUENCE[1] = WHISPER_SOT + 1 + tuple(WHISPER_LANGUAGES.keys()).index(lang)
+def build_sot_sequence(lang, task, model_config):
+    WHISPER_SOT = model_config["sot"]
+
+    if lang not in LANGUAGES.keys():
+        raise Exception(f"Unknown language: {lang}. Check whisper_tokenizer.py::LANGUAGES for correct options.")
+    
+    try:
+        lang_ind = LANGUAGES.index(lang)
+        lang_token = model_config["all_language_tokens"][lang_ind]
+    except:
+        raise ValueError(f"Unknown language: {lang}. Check whisper_tokenizer.py::LANGUAGES for correct options.")
+    
+    WHISPER_TRANSLATE = model_config["translate"]
+    WHISPER_TRANSCRIBE = model_config["transcribe"]
+    task_token = model_config["task"]
+
+    WHISPER_NO_TIMESTAMPS = model_config["no_timestamps"]
+
+    SOT_SEQUENCE = np.array([WHISPER_SOT, lang_token, task_token, WHISPER_NO_TIMESTAMPS], dtype=np.int32)
+    return SOT_SEQUENCE
 
 
 def main():
@@ -152,21 +182,20 @@ def main():
     wav_path = args.wav
     assert os.path.exists(wav_path), f"{wav_path} NOT exist"
 
-    # Choose language
-    choose_language(args.language)
-
     # Load models and other stuff
     start = time.time()
-    encoder, decoder_main, decoder_loop, pe, token_table = load_models(args.model_path, args.model_type)
+    encoder, decoder_main, decoder_loop, pe, tokenizer, model_config = load_models(args.model_path, args.model_type, args.language, args.task)
     print(f"Load models take {(time.time() - start) * 1000}ms")
-    WHISPER_N_TEXT_STATE = WHISPER_N_TEXT_STATE_MAP[args.model_type]
+    WHISPER_N_TEXT_STATE = model_config["n_text_state"]
+    WHISPER_N_TEXT_CTX = model_config["n_text_ctx"]
+    WHISPER_EOT = model_config["eot"]
+
+    # sot sequence
+    build_sot_sequence(args.language, args.task, model_config)
 
     # Preprocess
     start = time.time()
-    if "large" in args.model_type or "turbo" in args.model_type:
-        n_mels = 128
-    else:
-        n_mels = 80
+    n_mels = model_config["n_mels"]
     mel = compute_feature(wav_path, n_mels=n_mels)
     print(f"Preprocess wav take {(time.time() - start) * 1000}ms")
     # mel.tofile("mel.bin")
@@ -232,14 +261,14 @@ def main():
 
         print(f"Iter {i} \t Token: {max_token_id}")
     
-    s = b""
-    for i in output_tokens:
-        s += base64.b64decode(token_table[i])
-    # print(s.decode().strip())
-    pd = s.decode().strip()
-    if args.language == "zh":
-        pd = zhconv.convert(pd, 'zh-hans')
-
+    # s = b""
+    # for i in output_tokens:
+    #     s += base64.b64decode(token_table[i])
+    # # print(s.decode().strip())
+    # pd = s.decode().strip()
+    # if args.language == "zh":
+    #     pd = zhconv.convert(pd, 'zh-hans')
+    pd = tokenizer.decode(output_tokens)
     print(f"Result: {pd}")
 
 

@@ -32,6 +32,7 @@ from whisper.model import (
     TextDecoder,
 )
 from onnx.external_data_helper import convert_model_to_external_data
+import json
 
 torch.set_num_threads(1)
 torch.set_num_interop_threads(1)
@@ -520,6 +521,9 @@ def main():
     }
     print(f"encoder_meta_data: {encoder_meta_data}")
     add_meta_data(filename=encoder_filename, meta_data=encoder_meta_data)
+    with open(f"{name}/{name}_config.json", "w") as f:
+        json.dump(encoder_meta_data, f, indent=4)
+
     # save_large_model(encoder_filename)
 
     n_audio = mel.shape[0]

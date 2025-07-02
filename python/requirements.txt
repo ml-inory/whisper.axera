@@ -3,3 +3,4 @@ soundfile
 librosa==0.9.1
 zhconv
 jiwer
+tiktoken
