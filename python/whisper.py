@@ -31,7 +31,10 @@ SOT_SEQUENCE = np.array([WHISPER_SOT,WHISPER_SOT + 1 + tuple(WHISPER_LANGUAGES).
 WHISPER_N_TEXT_STATE_MAP = {
     "tiny": 384,
     "base": 512,
-    "small": 768
+    "small": 768,
+    "large": 1280,
+    "large-v3": 1280,
+    "turbo": 1280
 }
 
 
@@ -41,7 +44,7 @@ def get_args():
         description="Run Whisper on input audio file"
     )
     parser.add_argument("--wav", "-w", type=str, required=True, help="Input audio file")
-    parser.add_argument("--model_type", "-t", type=str, choices=["tiny", "base", "small"], required=True, help="model type, only support tiny, base and small currently")
+    parser.add_argument("--model_type", "-t", type=str, choices=["tiny", "base", "small", "large", "large-v3", "turbo"], required=True, help="model type, only support tiny, base and small currently")
     parser.add_argument("--model_path", "-p", type=str, required=False, default="../models", help="model path for *.axmodel, tokens.txt, positional_embedding.bin")
     parser.add_argument("--language", "-l", type=str, required=False, default="zh", help="Target language, support en, zh, ja, and others. See languages.py for more options.")
     return parser.parse_args()
@@ -160,7 +163,11 @@ def main():
 
     # Preprocess
     start = time.time()
-    mel = compute_feature(wav_path, n_mels=WHISPER_N_MELS)
+    if "large" in args.model_type or "turbo" in args.model_type:
+        n_mels = 128
+    else:
+        n_mels = 80
+    mel = compute_feature(wav_path, n_mels=n_mels)
     print(f"Preprocess wav take {(time.time() - start) * 1000}ms")
     # mel.tofile("mel.bin")
 
@@ -196,7 +203,7 @@ def main():
 
     # Autoregressively run decoder until token meets EOT
     for i in range(WHISPER_N_TEXT_CTX - SOT_SEQUENCE.shape[0]):
-        if max_token_id == WHISPER_EOT:
+        if max_token_id >= WHISPER_EOT:
             break
 
         output_tokens.append(max_token_id)

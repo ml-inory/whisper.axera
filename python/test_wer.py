@@ -8,9 +8,10 @@ import soundfile as sf
 import base64
 import zhconv
 import time
-import jiwer
-import json
 import logging
+import re
+import torch
+import kaldi_native_fbank as knf
 from languages import WHISPER_LANGUAGES
 
 
@@ -34,7 +35,10 @@ SOT_SEQUENCE = np.array([WHISPER_SOT,WHISPER_SOT + 1 + tuple(WHISPER_LANGUAGES).
 WHISPER_N_TEXT_STATE_MAP = {
     "tiny": 384,
     "base": 512,
-    "small": 768
+    "small": 768,
+    "large": 1280,
+    "large-v3": 1280,
+    "turbo": 1280
 }
 
 def setup_logging():
@@ -188,7 +192,7 @@ def get_args():
     parser.add_argument("--dataset", "-d", type=str, required=True, choices=["aishell", "common_voice"], help="Test dataset")
     parser.add_argument("--gt_path", "-g", type=str, required=True, help="Test dataset ground truth file")
     parser.add_argument("--max_num", type=int, default=-1, required=False, help="Maximum test data num")
-    parser.add_argument("--model_type", "-t", type=str, choices=["tiny", "base", "small"], required=True, help="model type, only support tiny, base and small currently")
+    parser.add_argument("--model_type", "-t", type=str, choices=["tiny", "base", "small", "large", "large-v3", "turbo"], required=True, help="model type, only support tiny, base and small currently")
     parser.add_argument("--model_path", "-p", type=str, required=False, default="../models", help="model path for *.axmodel, tokens.txt, positional_embedding.bin")
     parser.add_argument("--language", "-l", type=str, required=False, default="zh", help="Target language, support en, zh, ja, and others. See languages.py for more options.")
     return parser.parse_args()
@@ -204,14 +208,37 @@ def print_args(args):
     logger.info(f"language: {args.language}")
 
 
+def min_distance(word1: str, word2: str) -> int:
+ 
+    row = len(word1) + 1
+    column = len(word2) + 1
+ 
+    cache = [ [0]*column for i in range(row) ]
+ 
+    for i in range(row):
+        for j in range(column):
+ 
+            if i ==0 and j ==0:
+                cache[i][j] = 0
+            elif i == 0 and j!=0:
+                cache[i][j] = j
+            elif j == 0 and i!=0:
+                cache[i][j] = i
+            else:
+                if word1[i-1] == word2[j-1]:
+                    cache[i][j] = cache[i-1][j-1]
+                else:
+                    replace = cache[i-1][j-1] + 1
+                    insert = cache[i][j-1] + 1
+                    remove = cache[i-1][j] + 1
+ 
+                    cache[i][j] = min(replace, insert, remove)
+ 
+    return cache[row-1][column-1]
+
+
 def load_audio(filename: str) -> Tuple[np.ndarray, int]:
-    data, sample_rate = sf.read(
-        filename,
-        always_2d=True,
-        dtype="float32",
-    )
-    data = data[:, 0]  # use only the first channel
-    data = librosa.resample(data, orig_sr=sample_rate, target_sr=WHISPER_SAMPLE_RATE)
+    data, sample_rate = librosa.load(filename, sr=WHISPER_SAMPLE_RATE)
     samples = np.ascontiguousarray(data)
     return samples, sample_rate
 
@@ -248,7 +275,6 @@ def load_models(model_path, model_type):
 
 def compute_feature(wav_path, n_mels = WHISPER_N_MELS, padding = 480000):
     audio, sr = load_audio(wav_path)
-
     audio = np.concatenate((audio, np.zeros((padding,), dtype=np.float32)), axis=-1)
 
     mel = librosa.feature.melspectrogram(y=audio, sr=sr, n_fft=WHISPER_N_FFT, hop_length=WHISPER_HOP_LENGTH, window="hann", center=True, pad_mode="reflect", power=2.0, n_mels=n_mels)
@@ -317,26 +343,21 @@ def main():
     logger.info(f"Load models take {(time.time() - start) * 1000}ms")
     WHISPER_N_TEXT_STATE = WHISPER_N_TEXT_STATE_MAP[args.model_type]
 
-    # jiwer
-    transforms = jiwer.Compose(
-        [
-            jiwer.RemoveEmptyStrings(),
-            jiwer.ToLowerCase(),
-            jiwer.RemoveMultipleSpaces(),
-            jiwer.Strip(),
-            jiwer.RemovePunctuation(),
-            jiwer.ReduceToListOfListOfWords(),
-        ]
-    )
 
     # Iterate over dataset
     references = []
     hyp = []
+    all_character_error_num = 0
+    all_character_num = 0
     wer_file = open("wer.txt", "w")
     max_data_num = max_num if max_num > 0 else len(dataset)
     for n, (audio_path, reference) in enumerate(dataset):
         # Preprocess
-        mel = compute_feature(audio_path, n_mels=WHISPER_N_MELS)
+        if "large" in args.model_type or "turbo" in args.model_type:
+            n_mels = 128
+        else:
+            n_mels = 80
+        mel = compute_feature(audio_path, n_mels=n_mels)
 
         # Run encoder
         x = encoder.run(None, input_feed={"mel": mel[None, ...]})
@@ -390,34 +411,37 @@ def main():
         s = b""
         for i in output_tokens:
             s += base64.b64decode(token_table[i])
-        hypothesis = s.decode().strip()
+
+        hypothesis = s.decode('utf-8', errors='ignore').strip()
+
         if args.language == "zh":
-            hypothesis = zhconv.convert(hypothesis, 'zh-hans')
+            try:
+                hypothesis = zhconv.convert(hypothesis, 'zh-hans')
+            except:
+                hypothesis = ""
+
+        hypothesis = re.sub(r'[^\w\s]', '', hypothesis)
+        character_error_num = min_distance(reference, hypothesis)
+        character_num = len(reference)
+        character_error_rate = character_error_num / character_num * 100
+
+        all_character_error_num += character_error_num
+        all_character_num += character_num
 
         hyp.append(hypothesis)
         references.append(reference)
-        wer = jiwer.cer(
-                    reference,
-                    hypothesis,
-                    truth_transform=transforms,
-                    hypothesis_transform=transforms
-                )
         
-        line_content = f"({n+1}/{max_data_num}) {os.path.basename(audio_path)}  reference: {reference}  hypothesis: {hypothesis}  WER: {wer}"
+        line_content = f"({n+1}/{max_data_num}) {os.path.basename(audio_path)}  reference: {reference}  hypothesis: {hypothesis}  WER: {character_error_rate}%"
         wer_file.write(line_content + "\n")
         logger.info(line_content)
 
         if n + 1 >= max_data_num:
             break
 
-    total_wer = jiwer.cer(
-                    references,
-                    hyp,
-                    truth_transform=transforms,
-                    hypothesis_transform=transforms
-                )
-    logger.info(f"Total WER: {total_wer}")
-    wer_file.write(f"Total WER: {total_wer}")
+    total_character_error_rate = all_character_error_num / all_character_num * 100
+
+    logger.info(f"Total WER: {total_character_error_rate}%")
+    wer_file.write(f"Total WER: {total_character_error_rate}%")
     wer_file.close()
 
 if __name__ == "__main__":
