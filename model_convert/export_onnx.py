@@ -31,6 +31,7 @@ from whisper.model import (
     ResidualAttentionBlock,
     TextDecoder,
 )
+from onnx.external_data_helper import convert_model_to_external_data
 
 torch.set_num_threads(1)
 torch.set_num_interop_threads(1)
@@ -57,6 +58,28 @@ def get_args():
     return parser.parse_args()
 
 
+def save_large_model(filename: str):
+    model = onnx.load(filename)
+    if "large" in filename or "turbo" in filename:
+        external_filename = os.path.basename(filename).split(".onnx")[0]
+        convert_model_to_external_data(
+            model,
+            all_tensors_to_one_file=True,  
+            location=f"./{external_filename}.data",          
+            size_threshold=0,              
+            convert_attribute=False        
+        )
+
+        onnx.save_model(
+            model,
+            os.path.join(os.path.dirname(filename), "..", os.path.basename(filename)),
+            save_as_external_data=True,
+            all_tensors_to_one_file=True,
+            location=f"./{external_filename}.data",
+            size_threshold=0,
+        )
+
+
 def add_meta_data(filename: str, meta_data: Dict[str, Any]):
     """Add meta data to an ONNX model. It is changed in-place.
 
@@ -76,14 +99,23 @@ def add_meta_data(filename: str, meta_data: Dict[str, Any]):
         meta.key = key
         meta.value = str(value)
 
-    if "large" in filename:
-        external_filename = filename.split(".onnx")[0]
+    if "large" in filename or "turbo" in filename:
+        external_filename = os.path.basename(filename).split(".onnx")[0]
+        convert_model_to_external_data(
+            model,
+            all_tensors_to_one_file=True,  
+            location=f"./{external_filename}.data",          
+            size_threshold=0,              
+            convert_attribute=False        
+        )
+
         onnx.save(
             model,
-            filename,
+            os.path.join(os.path.dirname(filename), "..", os.path.basename(filename)),
             save_as_external_data=True,
             all_tensors_to_one_file=True,
-            location=external_filename + ".weights",
+            location=f"./{external_filename}.data",
+            size_threshold=0,
         )
     else:
         onnx.save(model, filename)
@@ -431,7 +463,11 @@ def main():
         model.dims.n_text_state,
     ), (n_layer_cross_v.shape, model.dims)
 
-    encoder_filename = f"{name}/{name}-encoder.onnx"
+    if "large" in name or "turbo" in name:
+        os.makedirs(f"{name}/{name}-encoder", exist_ok=True)
+        encoder_filename = f"{name}/{name}-encoder/{name}-encoder.onnx"
+    else:
+        encoder_filename = f"{name}/{name}-encoder.onnx"
     torch.onnx.export(
         encoder,
         mel,
@@ -452,7 +488,7 @@ def main():
         "model_type": f"whisper-{name}",
         "version": "1",
         "maintainer": "k2-fsa",
-        "n_mels": model.dims.n_mels,
+        "n_mels": n_mels,
         "n_audio_ctx": model.dims.n_audio_ctx,
         "n_audio_state": model.dims.n_audio_state,
         "n_audio_head": model.dims.n_audio_head,
@@ -484,6 +520,7 @@ def main():
     }
     print(f"encoder_meta_data: {encoder_meta_data}")
     add_meta_data(filename=encoder_filename, meta_data=encoder_meta_data)
+    # save_large_model(encoder_filename)
 
     n_audio = mel.shape[0]
     tokens = torch.tensor([[tokenizer.sot, tokenizer.sot, tokenizer.sot, tokenizer.sot]] * n_audio).to(
@@ -512,7 +549,11 @@ def main():
     positional_embedding = None
     mask = None
 
-    decoder_filename = f"{name}/{name}-decoder-main.onnx"
+    if "large" in name or "turbo" in name:
+        os.makedirs(f"{name}/{name}-decoder-main", exist_ok=True)
+        decoder_filename = f"{name}/{name}-decoder-main/{name}-decoder-main.onnx"
+    else:
+        decoder_filename = f"{name}/{name}-decoder-main.onnx"
     torch.onnx.export(
         decoder,
         (
@@ -546,6 +587,7 @@ def main():
         #     "n_layer_cross_v": {1: "n_audio", 2: "T"},
         # },
     )
+    save_large_model(decoder_filename)
 
     logits, n_layer_self_k_cache, n_layer_self_v_cache = decoder(
         tokens,
@@ -587,7 +629,11 @@ def main():
         mask,
     )
 
-    decoder_filename = f"{name}/{name}-decoder-loop.onnx"
+    if "large" in name or "turbo" in name:
+        os.makedirs(f"{name}/{name}-decoder-loop", exist_ok=True)
+        decoder_filename = f"{name}/{name}-decoder-loop/{name}-decoder-loop.onnx"
+    else:
+        decoder_filename = f"{name}/{name}-decoder-loop.onnx"
     torch.onnx.export(
         decoder,
         (
@@ -621,6 +667,7 @@ def main():
         #     "n_layer_cross_v": {1: "n_audio", 2: "T"},
         # },
     )
+    save_large_model(decoder_filename)
 
     embed_filename = f"{name}/{name}-positional-embedding.npy"
     import numpy as np
@@ -628,16 +675,16 @@ def main():
     np.save(embed_filename, pe)
     pe.flatten().tofile(f"{name}/{name}-positional_embedding.bin")
 
-    if "large" in args.model:
-        decoder_external_filename = decoder_filename.split(".onnx")[0]
-        decoder_model = onnx.load(decoder_filename)
-        onnx.save(
-            decoder_model,
-            decoder_filename,
-            save_as_external_data=True,
-            all_tensors_to_one_file=True,
-            location=decoder_external_filename + ".weights",
-        )
+    # if "large" in args.model:
+    #     decoder_external_filename = decoder_filename.split(".onnx")[0]
+    #     decoder_model = onnx.load(decoder_filename)
+    #     onnx.save(
+    #         decoder_model,
+    #         decoder_filename,
+    #         save_as_external_data=True,
+    #         all_tensors_to_one_file=True,
+    #         location=decoder_external_filename + ".weights",
+    #     )
 
 if __name__ == "__main__":
     main()

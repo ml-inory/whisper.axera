@@ -1,9 +1,10 @@
 openai-whisper==20240930
 onnx
-onnx-simplifier
 onnxruntime
-torch
+--find-links https://download.pytorch.org/whl/torch_stable.html
+torch==2.2.0+cpu
 zhconv
 soundfile
 kaldi_native_fbank
 dfss
+numpy<2.0
