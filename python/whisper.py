@@ -6,6 +6,7 @@ from typing import Union
 from whisper_tokenizer import *
 import json
 from dataclasses import dataclass
+import zhconv
 
 
 NEG_INF = float("-inf")
@@ -34,7 +35,7 @@ class WhisperConfig:
 class Whisper:
     def __init__(self, model_type: str, model_path: str, language: str, task: str):
         assert task in ["translate", "transcribe"]
-        
+
         self.language = language
         self.task = task
         self.encoder, self.decoder_main, self.decoder_loop, self.pe, self.tokenizer, model_config = \
@@ -210,6 +211,14 @@ class Whisper:
             max_token_id = np.argmax(logits)
         
         text = self.tokenizer.decode(output_tokens)
+
+        if self.language == "zh":
+            try:
+                sim_zh = zhconv.convert(text, 'zh-hans')
+                return sim_zh
+            except:
+                return text
+            
         return text
 
         
