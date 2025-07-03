@@ -51,13 +51,13 @@ pip3 install -r requirements.txt
 
 ```
 cd python  
-python3 whisper.py --model_type small --model_path ../models --wav ../demo.wav --language zh
+python3 main.py --model_type small --model_path ../models --wav ../demo.wav --language zh
 ```
 
 输出结果
 
 ```
-root@ax650:/mnt/qtang/whisper.axera/python# python3 whisper.py --wav ../demo.wav --model_type small --model_path ../models/ --language zh
+root@ax650:/mnt/qtang/whisper.axera/python# python3 main.py --wav ../demo.wav --model_type small --model_path ../models/ --language zh
 [INFO] Available providers:  ['AxEngineExecutionProvider']
 wav: ../demo.wav
 model_type: small
