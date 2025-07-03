@@ -8,3 +8,4 @@ soundfile
 kaldi_native_fbank
 dfss
 numpy<2.0
+librosa

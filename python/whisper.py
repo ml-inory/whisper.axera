@@ -62,13 +62,7 @@ def print_args(args):
 
 
 def load_audio(filename: str) -> Tuple[np.ndarray, int]:
-    data, sample_rate = sf.read(
-        filename,
-        always_2d=True,
-        dtype="float32",
-    )
-    data = data[:, 0]  # use only the first channel
-    data = librosa.resample(data, orig_sr=sample_rate, target_sr=WHISPER_SAMPLE_RATE)
+    data, sample_rate = librosa.load(filename, sr=WHISPER_SAMPLE_RATE)
     samples = np.ascontiguousarray(data)
     return samples, sample_rate
 

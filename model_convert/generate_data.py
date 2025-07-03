@@ -21,6 +21,7 @@ import torch
 import tarfile
 import glob
 from tqdm import tqdm
+import librosa
 
 
 def get_args():
@@ -286,12 +287,7 @@ def load_tokens(filename):
 
 
 def load_audio(filename: str) -> Tuple[np.ndarray, int]:
-    data, sample_rate = sf.read(
-        filename,
-        always_2d=True,
-        dtype="float32",
-    )
-    data = data[:, 0]  # use only the first channel
+    data, sample_rate = librosa.load(filename, sr=16000)
     samples = np.ascontiguousarray(data)
     return samples, sample_rate
 
