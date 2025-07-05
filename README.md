@@ -186,7 +186,8 @@ RTF: Real-Time Factor
 | ------------- | ------ | ------ |
 | Whisper-Tiny  | 0.05   |        |
 | Whisper-Base  |        | 0.35   |
-| Whisper-Small | 0.20   |        |
+| Whisper-Small | 0.40   |        |
+| Whisper-Turbo | 0.56   |        |
 
 ### Word Error Rate
 
@@ -195,6 +196,7 @@ RTF: Real-Time Factor
 | Whisper-Tiny  |        |        |
 | Whisper-Base  |        |        |
 | Whisper-Small |  0.11  |        |
+| Whisper-Turbo |  0.06  |        |
 
 ## 技术讨论
 
