@@ -1,3 +1,4 @@
+import argparse
 import json
 import os
 import tempfile
@@ -94,6 +95,10 @@ class WhisperHandler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    server = HTTPServer(("0.0.0.0", 8000), WhisperHandler)
-    print("Server started at http://0.0.0.0:8000")
+    parser = argparse.ArgumentParser(description="Whisper Server")
+    parser.add_argument("--port", type=int, default=8000, help="Port to run the server on")
+    args = parser.parse_args()
+    port = args.port
+    server = HTTPServer(("0.0.0.0", port), WhisperHandler)
+    print(f"Server started at http://0.0.0.0:{port}")
     server.serve_forever()
