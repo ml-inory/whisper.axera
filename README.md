@@ -181,7 +181,7 @@ Result: 甚至出现交易几乎停滞的情况
 ### 服务端
 
 ```
-./whisper_srv --model_type tiny --model_path ../models/models-ax650 --language zh --port 8080
+./install/whisper_srv --model_type tiny --model_path ../models/models-ax650 --language zh --port 8080
 ```
 
 ### 客户端
