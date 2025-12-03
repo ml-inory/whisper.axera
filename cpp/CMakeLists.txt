@@ -5,7 +5,6 @@ set(CMAKE_CXX_STANDARD 17)
 
 if (CMAKE_BUILD_TYPE MATCHES Debug)
     set(CMAKE_CXX_FLAGS "-fvisibility=hidden -g -O0")
-    add_definitions(-D__AX_SKEL_DEBUG__)
 elseif (CMAKE_BUILD_TYPE MATCHES Release)
     set(CMAKE_CXX_FLAGS "-fvisibility=hidden -O2")
 endif()
@@ -23,13 +22,17 @@ link_directories(${MSP_LIB_DIR})
 
 include_directories(src)
 aux_source_directory(src SRC)
+
 add_executable(whisper whisper.cpp ${SRC})
 target_link_libraries(whisper ${MSP_LIBS} opencc marisa)
+
+add_executable(whisper_srv whisper_srv.cpp ${SRC})
+target_link_libraries(whisper_srv ${MSP_LIBS} opencc marisa pthread)
 
 file(COPY ${CMAKE_SOURCE_DIR}/opencc/share/opencc/t2s.json DESTINATION ${CMAKE_INSTALL_PREFIX})
 file(COPY ${CMAKE_SOURCE_DIR}/opencc/share/opencc/TSPhrases.ocd2 DESTINATION ${CMAKE_INSTALL_PREFIX})
 file(COPY ${CMAKE_SOURCE_DIR}/opencc/share/opencc/TSCharacters.ocd2 DESTINATION ${CMAKE_INSTALL_PREFIX})
 
-install(TARGETS whisper
+install(TARGETS whisper whisper_srv
         RUNTIME
             DESTINATION .)

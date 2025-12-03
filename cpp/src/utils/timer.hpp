@@ -12,9 +12,7 @@
 
 #include <chrono>
 
-namespace utilities {
-
-class timer {
+class Timer {
 public:
     using nanoseconds = std::chrono::nanoseconds;
     using microseconds = std::chrono::microseconds;
@@ -23,7 +21,7 @@ public:
     using minutes = std::chrono::minutes;
     using hours = std::chrono::hours;
 
-    timer() {
+    Timer() {
         start();
     }
 
@@ -80,5 +78,3 @@ public:
 private:
     std::chrono::system_clock::time_point start_, end_;
 };
-
-}

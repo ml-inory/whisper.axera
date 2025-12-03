@@ -6,21 +6,18 @@
 #include <sys/time.h>
 
 #include "cmdline.hpp"
-#include "AudioFile.h"
-#include "Whisper.hpp"
-#include "utils/timer.hpp"
-
+#include "WhisperHTTPServer.hpp"
 
 int main(int argc, char** argv) {
     cmdline::parser cmd;
-    cmd.add<std::string>("wav", 'w', "wav file", true, "");
+    cmd.add<int>("port", 0, "http port", false, 8080);
     cmd.add<std::string>("model_type", 0, "tiny, base, small, turbo, large", false, "turbo");
     cmd.add<std::string>("model_path", 'p', "model path for *.axmodel, tokens.txt, positional_embedding.bin", false, "../../models/models-ax650");
     cmd.add<std::string>("language", 0, "en, zh", false, "zh");
     cmd.parse_check(argc, argv);
 
     // 0. get app args, can be removed from user's app
-    auto wav_file = cmd.get<std::string>("wav");
+    auto port = cmd.get<int>("port");
     auto model_path = cmd.get<std::string>("model_path");
     auto model_type = cmd.get<std::string>("model_type");
     auto language = cmd.get<std::string>("language");
@@ -51,45 +48,18 @@ int main(int argc, char** argv) {
     }
 #endif    
 
-    printf("wav_file: %s\n", wav_file.c_str());
+    printf("port: %d\n", port);
     printf("model_path: %s\n", model_path.c_str());
     printf("model_type: %s\n", model_type.c_str());
     printf("language: %s\n", language.c_str());
 
-    AudioFile<float> audio_file;
-    if (!audio_file.load(wav_file)) {
-        printf("load wav failed!\n");
+    WhisperHTTPServer server;
+    if (!server.init(model_path, model_type, language)) {
+        printf("init server failed!\n");
         return -1;
     }
 
-    auto& samples = audio_file.samples[0];
-    int n_samples = samples.size();
-    float duration = n_samples * 1.f / 16000;
+    server.start(port);
 
-    Timer timer;
-
-    // convert to mono
-    if (audio_file.isStereo()) {
-        for (int i = 0; i < n_samples; i++) {
-            samples[i] = (samples[i] + audio_file.samples[1][i]) / 2;
-        }
-    }
-
-    Whisper whisper(model_type, language);
-    if (!whisper.load_models(model_path)) {
-        printf("load models failed!\n");
-        return -1;
-    }
-
-    timer.start();
-    std::string result;
-    if (!whisper.run(samples, result)) {
-        printf("run whisper failed!\n");
-        return -1;
-    }
-    timer.stop();
-
-    printf("result: %s\n", result.c_str());
-    printf("RTF: %.4f\n", timer.elapsed<std::chrono::seconds>() / duration);
     return 0;
 }

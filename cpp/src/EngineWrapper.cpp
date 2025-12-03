@@ -188,13 +188,13 @@ int EngineWrapper::Init(const char* strModelPath, uint32_t nNpuType)
 
     if (bLoadModelUseCmm) {
         if (!utils::read_file(strModelPath, (AX_VOID **)&pModelBufferVirAddr, u64ModelBufferPhyAddr, nModelBufferSize)) {
-            printf("ALGO read model(%s) fail\n", strModelPath);
+            printf("read model(%s) fail\n", strModelPath);
             return -1;
         }
     }
     else {
         if (!utils::read_file(strModelPath, model_buffer)) {
-            printf("ALGO read model(%s) fail\n", strModelPath);
+            printf("read model(%s) fail\n", strModelPath);
             return -1;
         }
 
@@ -227,7 +227,7 @@ int EngineWrapper::Init(const char* strModelPath, uint32_t nNpuType)
      AX_ENGINE_NPU_SET_T nNpuSet = 0;
      ret = CheckModelVNpu(strModelPath, eModelType, nNpuType, nNpuSet);
      if (0 != ret) {
-         printf("ALGO CheckModelVNpu fail\n");
+         printf("CheckModelVNpu fail\n");
          freeModelBuffer();
          return -1;
      }
@@ -245,7 +245,7 @@ int EngineWrapper::Init(const char* strModelPath, uint32_t nNpuType)
     freeModelBuffer();
 
     if (0 != ret || !handle) {
-        printf("ALGO Create model(%s) handle fail\n", strModelPath);
+        printf("Create model(%s) handle fail\n", strModelPath);
 
         return deinit_handle();
     }

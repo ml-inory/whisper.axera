@@ -16,24 +16,4 @@ class DecoderLoop : public EngineWrapper {
 public:
     DecoderLoop() = default;
     ~DecoderLoop() = default;
-
-    // int Run() {
-    //     int ret = 0;
-    //     ret = this->Run();
-    //     if (ret) {
-    //         return ret;
-    //     }
-
-    //     // ret = SetInput(GetOutputPtr(1), 1);
-    //     // if (ret) {
-    //     //     return ret;
-    //     // }
-
-    //     // ret = SetInput(GetOutputPtr(2), 2);
-    //     // if (ret) {
-    //     //     return ret;
-    //     // }
-
-    //     return ret;
-    // }
 };

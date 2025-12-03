@@ -178,6 +178,22 @@ All take 801.13 ms
 Result: 甚至出现交易几乎停滞的情况
 ```
 
+### 服务端
+
+```
+./whisper_srv --model_type tiny --model_path ../models/models-ax650 --language zh --port 8080
+```
+
+### 客户端
+
+curl命令行测试:  
+```
+ffmpeg -i demo.wav -f f32le -c:a pcm_f32le - 2>/dev/null | \
+curl -X POST 10.126.33.192:8080/asr \
+  -H "Content-Type: application/octet-stream" \
+  --data-binary @-
+```
+
 ### Latency
 
 RTF: Real-Time Factor
@@ -197,6 +213,7 @@ RTF: Real-Time Factor
 | Whisper-Base  |        |        |
 | Whisper-Small |  0.11  |        |
 | Whisper-Turbo |  0.06  |        |
+
 
 ## 技术讨论
 
