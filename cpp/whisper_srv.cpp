@@ -54,10 +54,12 @@ int main(int argc, char** argv) {
     printf("language: %s\n", language.c_str());
 
     WhisperHTTPServer server;
+    ALOGI("Initializing server...");
     if (!server.init(model_path, model_type, language)) {
         printf("init server failed!\n");
         return -1;
     }
+    ALOGI("Init server success");
 
     server.start(port);
 
