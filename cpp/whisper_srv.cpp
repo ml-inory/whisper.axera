@@ -10,10 +10,10 @@
 
 int main(int argc, char** argv) {
     cmdline::parser cmd;
-    cmd.add<int>("port", 0, "http port", false, 8080);
-    cmd.add<std::string>("model_type", 0, "tiny, base, small, turbo, large", false, "turbo");
-    cmd.add<std::string>("model_path", 'p', "model path for *.axmodel, tokens.txt, positional_embedding.bin", false, "../models/models-ax650");
-    cmd.add<std::string>("language", 0, "en, zh", false, "zh");
+    cmd.add<int>("port", 'p', "http port", false, 8080);
+    cmd.add<std::string>("model_type", 't', "tiny, base, small, turbo, large", false, "turbo");
+    cmd.add<std::string>("model_path", 0, "model path for *.axmodel, tokens.txt, positional_embedding.bin", false, "../models/models-ax650");
+    cmd.add<std::string>("language", 'l', "en, zh", false, "zh");
     cmd.parse_check(argc, argv);
 
     // 0. get app args, can be removed from user's app

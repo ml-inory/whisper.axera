@@ -28,9 +28,12 @@ OpenAI Whisper on Axera
   - [爱芯派2(AX630C)](https://axera-pi-2-docs-cn.readthedocs.io/zh-cn/latest/index.html)
   - [Module-LLM(AX630C)](https://docs.m5stack.com/zh_CN/module/Module-LLM)
   - [LLM630 Compute Kit(AX630C)](https://docs.m5stack.com/zh_CN/core/LLM630%20Compute%20Kit)
+- 支持编程语言:
+  - [Python](#Python)
+  - [CPP](#CPP)
 
 
-### Python API 运行
+<h3 id="Python">Python</h3>
 
 #### Requirements
 
@@ -123,12 +126,22 @@ Result: 甚至出现交易几乎停滞的情况
 
 ### 示例
 
-### CPP API 运行
+<h3 id="CPP">CPP</h3>
 
 #### 交叉编译
 
-在 PC 上完成
+在 PC 上完成（已在Ubuntu22.04上测试）
 
+安装开发环境:
+```
+sudo apt update
+sudo apt install build-essential cmake
+```
+
+获取交叉编译工具链: [地址](https://developer.arm.com/-/media/Files/downloads/gnu-a/9.2-2019.12/binrel/gcc-arm-9.2-2019.12-x86_64-aarch64-none-linux-gnu.tar.xz)  
+将交叉编译工具链路径添加到PATH  
+
+编译  
 ```
 cd cpp
 ./download_bsp.sh
@@ -194,25 +207,76 @@ curl -X POST 10.126.33.192:8080/asr \
   --data-binary @-
 ```
 
+## 模型性能
+
 ### Latency
 
 RTF: Real-Time Factor
 
-| Models        | AX650N | AX630C |
-| ------------- | ------ | ------ |
-| Whisper-Tiny  | 0.05   |        |
-| Whisper-Base  |        | 0.35   |
-| Whisper-Small | 0.40   |        |
-| Whisper-Turbo | 0.56   |        |
-
-### Word Error Rate
+CPP:
 
 | Models        | AX650N | AX630C |
 | ------------- | ------ | ------ |
-| Whisper-Tiny  |        |        |
-| Whisper-Base  |        |        |
+| Whisper-Tiny  | 0.08   |        |
+| Whisper-Base  | 0.11   | 0.35   |
+| Whisper-Small | 0.24   |        |
+| Whisper-Turbo | 0.48   |        |
+
+Python:  
+
+| Models        | AX650N | AX630C |
+| ------------- | ------ | ------ |
+| Whisper-Tiny  | 0.12   |        |
+| Whisper-Base  | 0.16   | 0.35   |
+| Whisper-Small | 0.50   |        |
+| Whisper-Turbo | 0.60   |        |
+
+### Word Error Rate(Test on AIShell dataset)
+
+| Models        | AX650N | AX630C |
+| ------------- | ------ | ------ |
+| Whisper-Tiny  |  0.24  |        |
+| Whisper-Base  |  0.18  |        |
 | Whisper-Small |  0.11  |        |
 | Whisper-Turbo |  0.06  |        |
+
+若要复现测试结果，请按照以下步骤:
+
+下载数据集:
+```
+cd model_convert
+bash download_dataset.sh
+```
+
+运行测试脚本:
+```
+cd python
+conda activate whisper
+python test_wer.py -d aishell --gt_path ../model_convert/datasets/ground_truth.txt --model_type tiny
+
+```
+
+### MEM Usage
+
+* CMM Stands for Physical memory used by Axera modules like VDEC(Video decoder), VENC(Video encoder), NPU, etc.
+
+Python:  
+
+| Models        | CMM(MB)| OS(MB) |
+| ------------- | ------ | ------ |
+| Whisper-Tiny  |  332   |  512   |
+| Whisper-Base  |  533   |  644   |
+| Whisper-Small |  1106  |  906   |
+| Whisper-Turbo |  2065  |  2084  |
+
+C++:  
+
+| Models        | CMM(MB)| OS(MB) |
+| ------------- | ------ | ------ |
+| Whisper-Tiny  |  332   |  31    |
+| Whisper-Base  |  533   |  54    |
+| Whisper-Small |  1106  |  146   |
+| Whisper-Turbo |  2065  |  86    |
 
 
 ## 技术讨论

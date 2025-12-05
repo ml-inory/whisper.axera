@@ -157,7 +157,7 @@ def get_args():
     parser.add_argument("--gt_path", "-g", type=str, required=True, help="Test dataset ground truth file")
     parser.add_argument("--max_num", type=int, default=-1, required=False, help="Maximum test data num")
     parser.add_argument("--model_type", "-t", type=str, choices=["tiny", "base", "small", "large", "large-v3", "turbo"], required=True, help="model type, only support tiny, base and small currently")
-    parser.add_argument("--model_path", "-p", type=str, required=False, default="../models", help="model path for *.axmodel, tokens.txt, positional_embedding.bin")
+    parser.add_argument("--model_path", "-p", type=str, required=False, default="../models/models-ax650", help="model path for *.axmodel, tokens.txt, positional_embedding.bin")
     parser.add_argument("--language", "-l", type=str, required=False, default="zh", help="Target language, support en, zh, ja, and others. See languages.py for more options.")
     return parser.parse_args()
 

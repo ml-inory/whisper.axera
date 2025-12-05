@@ -1,6 +1,7 @@
 import argparse
 import os
 from whisper import Whisper
+import time
 
 
 def get_args():
@@ -13,6 +14,7 @@ def get_args():
     parser.add_argument("--model_path", "-p", type=str, required=False, default="../models/models-ax650", help="model path for *.axmodel, tokens.txt, positional_embedding.bin")
     parser.add_argument("--language", "-l", type=str, required=False, default="zh", help="Target language, support en, zh, ja, and others. See languages.py for more options.")
     parser.add_argument("--task", type=str, required=False, choices=["translate", "transcribe"], default="transcribe")
+    parser.add_argument("--print_rtf", action="store_true", help="Print Real-Time Factor")
     return parser.parse_args()
 
 
@@ -33,9 +35,20 @@ def main():
     assert os.path.exists(wav_path), f"{wav_path} NOT exist"
 
     model = Whisper(args.model_type, args.model_path, args.language, args.task)
+
+    
     
     print("\n预测结果:")
+    start = time.time()
     print(model.run(wav_path))
+    end = time.time()
+
+    if args.print_rtf:
+        import librosa
+        samples, sr = librosa.load(wav_path, sr=16000)
+        duration = len(samples) / sr
+        process_time = end - start
+        print(f"RTF: {process_time / duration}")
 
 if __name__ == "__main__":
     main()
