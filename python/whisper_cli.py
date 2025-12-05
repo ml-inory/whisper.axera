@@ -3,12 +3,12 @@ import requests
 def transcribe_audio(
     server_url: str,
     wav_path: str,
-    model_type: str = "turbo",
-    model_path: str = "../models/models-ax650/turbo",
+    model_type: str = "tiny",
+    model_path: str = "../models/models-ax650",
     language: str = "zh",
     task: str = "transcribe"
 ):
-    url = f"{server_url.rstrip('/')}/transcribe"
+    url = f"{server_url.rstrip('/')}/asr"
 
     files = {
         "wav": open(wav_path, "rb"),

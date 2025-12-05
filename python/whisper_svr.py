@@ -37,7 +37,7 @@ class WhisperHandler(BaseHTTPRequestHandler):
             self._send_json({"error": "not found"}, 404)
 
     def do_POST(self):
-        if self.path != "/transcribe":
+        if self.path != "/asr":
             self._send_json({"error": "not found"}, 404)
             return
 
@@ -64,8 +64,8 @@ class WhisperHandler(BaseHTTPRequestHandler):
             return
 
         # 获取参数（如果缺省则使用默认值）
-        model_type = form.get("model_type", ["turbo"])[0]
-        model_path = form.get("model_path", ["../models/models-ax650/turbo"])[0]
+        model_type = form.get("model_type", ["tiny"])[0]
+        model_path = form.get("model_path", ["../models/models-ax650"])[0]
         language = form.get("language", ["zh"])[0]
         task = form.get("task", ["transcribe"])[0]
 

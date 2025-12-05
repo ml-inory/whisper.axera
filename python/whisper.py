@@ -29,7 +29,7 @@ class WhisperConfig:
     n_text_ctx      : int = 0
     n_text_state    : int = 0
 
-    sot_sequence    : np.ndarray = np.array([0,0,0,0], dtype=np.int32)
+    sot_sequence    : np.ndarray = field(default_factory=lambda: np.array([0,0,0,0], dtype=np.int32))
 
 
 class Whisper:
@@ -44,11 +44,11 @@ class Whisper:
 
 
     def load_model(self, model_type, model_path, language, task):
-        encoder_path = f"{model_type}-encoder.axmodel"
-        decoder_main_path = f"{model_type}-decoder-main.axmodel"
-        decoder_loop_path = f"{model_type}-decoder-loop.axmodel"
-        pe_path = f"{model_type}-positional_embedding.bin"
-        model_config_file = f"{model_type}_config.json"
+        encoder_path = f"{model_type}/{model_type}-encoder.axmodel"
+        decoder_main_path = f"{model_type}/{model_type}-decoder-main.axmodel"
+        decoder_loop_path = f"{model_type}/{model_type}-decoder-loop.axmodel"
+        pe_path = f"{model_type}/{model_type}-positional_embedding.bin"
+        model_config_file = f"{model_type}/{model_type}_config.json"
 
         required_files = [os.path.join(model_path, i) for i in (encoder_path, decoder_main_path, decoder_loop_path, pe_path, model_config_file)]
         # Check file existence
@@ -56,11 +56,11 @@ class Whisper:
             assert os.path.exists(file_path), f"{file_path} NOT exist"
 
         # Load encoder
-        encoder = axe.InferenceSession(required_files[0])
+        encoder = axe.InferenceSession(required_files[0], providers=['AxEngineExecutionProvider'])
         # Load decoder main
-        decoder_main = axe.InferenceSession(required_files[1])
+        decoder_main = axe.InferenceSession(required_files[1], providers=['AxEngineExecutionProvider'])
         # Load decoder loop
-        decoder_loop = axe.InferenceSession(required_files[2])
+        decoder_loop = axe.InferenceSession(required_files[2], providers=['AxEngineExecutionProvider'])
         # Load position embedding
         pe = np.fromfile(required_files[3], dtype=np.float32)
         # Load tokens
@@ -78,7 +78,7 @@ class Whisper:
     
 
     def load_config(self, model_config):
-        config = WhisperConfig()
+        config = WhisperConfig
         config.n_mels = model_config["n_mels"]
         config.sample_rate = 16000
         config.n_fft = 480
