@@ -5,43 +5,43 @@
       "input_configs": [
         {
           "tensor_name": "tokens",
-          "calibration_dataset": "./calibrations_small/decoder_loop/tokens.tar.gz",
+          "calibration_dataset": "./calibrations_base/decoder_loop/tokens.tar.gz",
           "calibration_size": -1,
           "calibration_format": "Numpy"
         },
         {
           "tensor_name": "n_layer_cross_k",
-          "calibration_dataset": "./calibrations_small/decoder_loop/n_layer_cross_k.tar.gz",
+          "calibration_dataset": "./calibrations_base/decoder_loop/n_layer_cross_k.tar.gz",
           "calibration_size": -1,
           "calibration_format": "Numpy"
         },
         {
           "tensor_name": "in_n_layer_self_k_cache",
-          "calibration_dataset": "./calibrations_small/decoder_loop/n_layer_self_k_cache.tar.gz",
+          "calibration_dataset": "./calibrations_base/decoder_loop/n_layer_self_k_cache.tar.gz",
           "calibration_size": -1,
           "calibration_format": "Numpy"
         },
         {
           "tensor_name": "in_n_layer_self_v_cache",
-          "calibration_dataset": "./calibrations_small/decoder_loop/n_layer_self_v_cache.tar.gz",
+          "calibration_dataset": "./calibrations_base/decoder_loop/n_layer_self_v_cache.tar.gz",
           "calibration_size": -1,
           "calibration_format": "Numpy"
         },
         {
           "tensor_name": "n_layer_cross_v",
-          "calibration_dataset": "./calibrations_small/decoder_loop/n_layer_cross_v.tar.gz",
+          "calibration_dataset": "./calibrations_base/decoder_loop/n_layer_cross_v.tar.gz",
           "calibration_size": -1,
           "calibration_format": "Numpy"
         },
         {
           "tensor_name": "positional_embedding",
-          "calibration_dataset": "./calibrations_small/decoder_loop/positional_embedding.tar.gz",
+          "calibration_dataset": "./calibrations_base/decoder_loop/positional_embedding.tar.gz",
           "calibration_size": -1,
           "calibration_format": "Numpy"
         },
         {
           "tensor_name": "mask",
-          "calibration_dataset": "./calibrations_small/decoder_loop/mask.tar.gz",
+          "calibration_dataset": "./calibrations_base/decoder_loop/mask.tar.gz",
           "calibration_size": -1,
           "calibration_format": "Numpy"
         }
@@ -65,7 +65,13 @@
           "data_type": "FP32"
         }
       ],
-      "calibration_method": "MinMax"
+      "calibration_method": "MinMax",
+      "enable_smooth_quant": true,
+      "conv_bias_data_type": "FP32",
+      "disable_auto_refine_scale": true,
+      "precision_analysis": true,
+      "precision_analysis_method": "EndToEnd",
+      "transformer_opt_level": 1
     },
     "input_processors": [
       {
@@ -73,6 +79,6 @@
       }
     ],
     "compiler": {
-      "check": 2
+      "check": 0
     }
   }

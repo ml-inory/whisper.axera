@@ -43,38 +43,12 @@ def get_args():
         # fmt: on
     )
 
-    parser.add_argument(
-        "--language",
-        type=str,
-        default="zh",
-        help="""The actual spoken language in the audio.
-        Example values, en, de, zh, jp, fr.
-        If None, we will detect the language using the first 30s of the
-        input audio
-        """,
-    )
-
-    parser.add_argument(
-        "--task",
-        choices=["transcribe", "translate"],
-        type=str,
-        default="transcribe",
-        help="Valid values are: transcribe, translate",
-    )
-
-    parser.add_argument(
-        "--gt_file",
-        type=str,
-        default="./datasets/ground_truth.txt",
-        help="Path to the test wave",
-    )
-
-    parser.add_argument(
-        "--dataset_path",
-        type=str,
-        default="./datasets/aishell_S0764",
-        help="Path to the test wave",
-    )
+    # parser.add_argument(
+    #     "--dataset_path",
+    #     type=str,
+    #     default="./datasets/aishell_S0764",
+    #     help="Path to the test wave",
+    # )
 
     parser.add_argument(
         "--max_num",
@@ -83,10 +57,6 @@ def get_args():
         help="Maximum num of data",
     )
 
-    parser.add_argument(
-        "--save_report",
-        action="store_true"
-    )
     return parser.parse_args()
 
 
@@ -287,7 +257,9 @@ def load_tokens(filename):
 
 
 def load_audio(filename: str) -> Tuple[np.ndarray, int]:
-    data, sample_rate = librosa.load(filename, sr=16000)
+    data, sample_rate = librosa.load(filename, sr=None, mono=True)
+    if sample_rate != 16000:
+        data = librosa.resample(data, orig_sr=sample_rate, target_sr=16000)
     samples = np.ascontiguousarray(data)
     return samples, sample_rate
 
@@ -344,8 +316,10 @@ def compute_features(filename: str, dim: int = 80) -> torch.Tensor:
 
     return mel
 
-def forward(model_type: str, model: OnnxModel, sound_file: str, positional_embedding: np.ndarray, save_data: bool = False):
-    name = sound_file.split("/")[-1][:-4]
+def forward(model_type: str, model: OnnxModel, sound_file: str, lang: str, positional_embedding: np.ndarray, save_data: bool = False):
+    name = os.path.splitext(os.path.basename(sound_file))[0]
+
+    model.sot_sequence[1] = model.lang2id[lang]
 
     n_mels = model.n_mels
     mel = compute_features(sound_file, dim=n_mels)
@@ -465,6 +439,7 @@ def min_distance(word1: str, word2: str) -> int:
 
 def main():
     args = get_args()
+    print(args)
     model_type = args.model
     max_num = args.max_num
     encoder_filename = f"{model_type}/{model_type}-encoder.onnx"
@@ -474,93 +449,38 @@ def main():
     token_file = f"{model_type}/{model_type}-tokens.txt"
     model = OnnxModel(encoder_filename, decoder_dynamic_filename, decoder_static_filename)
 
-    if args.language is not None:
-        if model.is_multilingual is False and args.language != "en":
-            print(f"This model supports only English. Given: {args.language}")
-            return
-
-        if args.language not in model.lang2id:
-            print(f"Invalid language: {args.language}")
-            print(f"Valid values are: {list(model.lang2id.keys())}")
-            return
-
-        # [sot, lang, task, notimestamps]
-        model.sot_sequence[1] = model.lang2id[args.language]
-    elif model.is_multilingual is True:
-        assert False
-        print("detecting language")
-        lang = model.detect_language(n_layer_cross_k, n_layer_cross_v)
-        model.sot_sequence[1] = lang
-
-    if args.task is not None:
-        if model.is_multilingual is False and args.task != "transcribe":
-            print("This model supports only English. Please use --task=transcribe")
-            return
-        assert args.task in ["transcribe", "translate"], args.task
-
-        if args.task == "translate":
-            model.sot_sequence[2] = model.translate
+    # [sot, lang, task, notimestamps]
+    model.sot_sequence[1] = model.lang2id["en"]
 
     positional_embedding = torch.from_numpy(np.load(pe_file))
-    token_table = load_tokens(token_file)
 
-    dataset = []
-    all_character_num = 0
-    all_character_error_num = 0
-    with open(args.gt_file, "r") as f:
-        for i, line in enumerate(f):
-            if max_num >= 0 and i >= max_num:
-                break
-            line = line.strip()
-            name, gt = line.split(' ')
-            character_num = len(gt)
-            dataset.append({
-                "name": name,
-                "gt": gt,
-                "character_num": character_num,
-            })
-            all_character_num += character_num
-    random.seed(0)
-    random.shuffle(dataset)
+    dataset = {
+        'en': ['example/en.mp3'],
+        'ja': ['example/ja.mp3'],
+        'ko': ['example/ko.mp3'],
+        'zh': ['example/zh.mp3']
+    }
 
+    dataset_num = sum(len(v) for v in dataset.values())
+    assert dataset_num > 0, 'dataset is empty'
     print(f"Generating data, total {len(dataset)}")
-    for idx, data in tqdm(enumerate(dataset)):
-        if max_num <= 0:
-            save_data = True
-        else:
-            save_data = idx < max_num
-        sound_file = args.dataset_path + "/" + data["name"] + ".wav"
-        print(sound_file)
-        results = forward(model_type, model, sound_file, positional_embedding, save_data)
-    
-        s = b""
-        for i in results:
-            if i in token_table:
-                s += base64.b64decode(token_table[i])
-        # print(s.decode().strip())
-        pd = zhconv.convert(s.decode().strip(), 'zh-hans')
-        pd = re.sub(r'[^\w\s]', '', pd)
-        character_error_num = min_distance(data["gt"], pd)
-        character_error_rate = character_error_num / data["character_num"] * 100
-        data.update({
-            "pd": pd,
-            "character_error_num": character_error_num,
-            "character_error_rate": character_error_rate,
-        })
-        all_character_error_num += character_error_num
+    gen_num = 0
+    for lang in dataset.keys():
+        for sound_path in dataset[lang]:
+            if max_num <= 0:
+                save_data = True
+            else:
+                save_data = gen_num < max_num
 
-        print(f"{idx}: ")
-        print(data["gt"])
-        print(data["pd"])
-        print(f"CER: {character_error_rate}%")
+            results = forward(model_type, model, sound_path, lang, positional_embedding, save_data)
 
-    total_character_error_rate = all_character_error_num / all_character_num * 100
-    print(f"\ntotal CER: {total_character_error_rate}%")
+            gen_num += 1
 
     tar_dirs = [f"calibrations_{model_type}/encoder/mel", f"calibrations_{model_type}/decoder_main/tokens", f"calibrations_{model_type}/decoder_main/n_layer_cross_k",
                 f"calibrations_{model_type}/decoder_main/n_layer_cross_v", f"calibrations_{model_type}/decoder_loop/tokens", f"calibrations_{model_type}/decoder_loop/n_layer_self_k_cache",
                 f"calibrations_{model_type}/decoder_loop/n_layer_self_v_cache", f"calibrations_{model_type}/decoder_loop/n_layer_cross_k", f"calibrations_{model_type}/decoder_loop/n_layer_cross_v",
                 f"calibrations_{model_type}/decoder_loop/positional_embedding", f"calibrations_{model_type}/decoder_loop/mask"]
+    
     for td in tar_dirs:
         tar_filename = os.path.join(td, "..", os.path.basename(td) + ".tar.gz")
         tar = tarfile.open(tar_filename, "w:gz")
@@ -569,28 +489,10 @@ def main():
         tar.close()
         print(f"Save {tar_filename}")
     
-    if args.save_report:
-        with open('out_report.tsv', 'w', newline='', encoding='utf-8') as file:
-            writer = csv.writer(file, delimiter='\t')
-            row = ["name", "gt", "pd", "character_num", "character_error_num", "character_error_rate(%)"]
-            writer.writerow(row)
-            for data in dataset:
-                row = [
-                    data["name"],
-                    data["gt"],
-                    data["pd"],
-                    data["character_num"],
-                    data["character_error_num"],
-                    data["character_error_rate"],
-                ]
-                writer.writerow(row)
-            writer.writerow([])
-            writer.writerow(["total_character_error_rate(%): ", total_character_error_rate])
-
 
 if __name__ == "__main__":
     main()
+
 '''
-python3 ./test_ax_loop_dataset.py --model tiny
-python3 ./test_ax_loop_dataset.py --model small
+python3 ./generate_data.py --model tiny
 '''

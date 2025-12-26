@@ -5,19 +5,19 @@
       "input_configs": [
         {
           "tensor_name": "tokens",
-          "calibration_dataset": "./calibrations_small/decoder_main/tokens.tar.gz",
+          "calibration_dataset": "./calibrations_base/decoder_main/tokens.tar.gz",
           "calibration_size": -1,
           "calibration_format": "Numpy"
         },
         {
           "tensor_name": "n_layer_cross_k",
-          "calibration_dataset": "./calibrations_small/decoder_main/n_layer_cross_k.tar.gz",
+          "calibration_dataset": "./calibrations_base/decoder_main/n_layer_cross_k.tar.gz",
           "calibration_size": -1,
           "calibration_format": "Numpy"
         },
         {
           "tensor_name": "n_layer_cross_v",
-          "calibration_dataset": "./calibrations_small/decoder_main/n_layer_cross_v.tar.gz",
+          "calibration_dataset": "./calibrations_base/decoder_main/n_layer_cross_v.tar.gz",
           "calibration_size": -1,
           "calibration_format": "Numpy"
         }
@@ -41,7 +41,13 @@
           "data_type": "FP32"
         }
       ],
-      "calibration_method": "MinMax"
+      "calibration_method": "MinMax",
+      "enable_smooth_quant": true,
+      "conv_bias_data_type": "FP32",
+      "disable_auto_refine_scale": true,
+      "precision_analysis": true,
+      "precision_analysis_method": "EndToEnd",
+      "transformer_opt_level": 1
     },
     "input_processors": [
       {
@@ -49,6 +55,6 @@
       }
     ],
     "compiler": {
-      "check": 2
+      "check": 0
     }
   }

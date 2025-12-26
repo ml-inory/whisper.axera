@@ -1,11 +1,12 @@
 {
     "model_type": "ONNX",
     "npu_mode": "NPU3",
+    "target_hardware": "AX650",
     "quant": {
       "input_configs": [
         {
           "tensor_name": "mel",
-          "calibration_dataset": "./calibrations_small/encoder/mel.tar.gz",
+          "calibration_dataset": "./calibrations_base/encoder/mel.tar.gz",
           "calibration_size": -1,
           "calibration_format": "Numpy"
         }
@@ -17,7 +18,13 @@
           "data_type": "U16"
         }
       ],
-      "calibration_method": "MinMax"
+      "calibration_method": "MinMax",
+      "enable_smooth_quant": true,
+      "conv_bias_data_type": "FP32",
+      "disable_auto_refine_scale": true,
+      "precision_analysis": true,
+      "precision_analysis_method": "EndToEnd",
+      "transformer_opt_level": 1
     },
     "input_processors": [
       {
@@ -25,6 +32,6 @@
       }
     ],
     "compiler": {
-      "check": 3
+      "check": 0
     }
   }
