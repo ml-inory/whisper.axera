@@ -11,7 +11,7 @@ import csv
 import random
 import re
 import zhconv
-from typing import Tuple
+from typing import Tuple, List
 
 import kaldi_native_fbank as knf
 import numpy as np
@@ -22,50 +22,17 @@ import tarfile
 import glob
 from tqdm import tqdm
 import librosa
-
-
-def get_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--model",
-        type=str,
-        required=True,
-        # fmt: off
-        choices=[
-            "tiny", "tiny.en", "base", "base.en",
-            "small", "small.en", "medium", "medium.en",
-            "large", "large-v1", "large-v2", "large-v3",
-            "distil-medium.en", "distil-small.en", "distil-large-v2",
-            # "distil-large-v3", # distil-large-v3 is not supported!
-            # for fine-tuned models from icefall
-            "medium-aishell", "turbo"
-            ],
-        # fmt: on
-    )
-
-    # parser.add_argument(
-    #     "--dataset_path",
-    #     type=str,
-    #     default="./datasets/aishell_S0764",
-    #     help="Path to the test wave",
-    # )
-
-    parser.add_argument(
-        "--max_num",
-        type=int,
-        default=-1,
-        help="Maximum num of data",
-    )
-
-    return parser.parse_args()
+import soundfile as sf
+import torch
+import whisper
+from export_onnx import get_args, causal_mask_1d
 
 
 class OnnxModel:
     def __init__(
         self,
         encoder: str,
-        decoder_dynamic: str,
-        decoder_static: str,
+        decoder: str,
     ):
         session_opts = ort.SessionOptions()
         session_opts.inter_op_num_threads = 1
@@ -74,8 +41,7 @@ class OnnxModel:
         self.session_opts = session_opts
 
         self.init_encoder(encoder)
-        self.init_decoder(decoder_dynamic, dynamic=True)
-        self.init_decoder(decoder_static, dynamic=False)
+        self.init_decoder(decoder)
 
     def init_encoder(self, encoder: str):
         self.encoder = ort.InferenceSession(
@@ -84,19 +50,28 @@ class OnnxModel:
             providers=["CPUExecutionProvider"],
         )
 
+        self.encoder_input_names = []
+        self.encoder_output_names = []
+
+        print(f"-----{encoder}-----")
+        print(f"----input----")
+        for i in self.encoder.get_inputs():
+            print(i)
+            self.encoder_input_names.append(i.name)
+
+        print("-----output-----")
+
+        for i in self.encoder.get_outputs():
+            print(i)
+            self.encoder_output_names.append(i.name)
+
         meta = self.encoder.get_modelmeta().custom_metadata_map
         self.n_text_layer = int(meta["n_text_layer"])
         self.n_text_ctx = int(meta["n_text_ctx"])
         self.n_text_state = int(meta["n_text_state"])
         self.n_mels = int(meta["n_mels"])
-        self.sot = int(meta["sot"])
         self.eot = int(meta["eot"])
-        self.translate = int(meta["translate"])
-        self.transcribe = int(meta["transcribe"])
         self.no_timestamps = int(meta["no_timestamps"])
-        self.no_speech = int(meta["no_speech"])
-        self.blank = int(meta["blank_id"])
-
         self.sot_sequence = list(map(int, meta["sot_sequence"].split(",")))
         self.sot_sequence.append(self.no_timestamps)
 
@@ -107,144 +82,63 @@ class OnnxModel:
         self.lang2id = dict(zip(self.all_language_codes, self.all_language_tokens))
         self.id2lang = dict(zip(self.all_language_tokens, self.all_language_codes))
 
-        self.is_multilingual = int(meta["is_multilingual"]) == 1
+    def init_decoder(self, decoder: str):
+        self.decoder = ort.InferenceSession(
+            decoder,
+            sess_options=self.session_opts,
+            providers=["CPUExecutionProvider"],
+        )
 
-    def init_decoder(self, decoder: str, dynamic: bool):
-        if dynamic:
-            self.decoder_dynamic = ort.InferenceSession(
-                decoder,
-                sess_options=self.session_opts,
-                providers=["CPUExecutionProvider"],
-            )
-        else:
-            self.decoder_static = ort.InferenceSession(
-                decoder,
-                sess_options=self.session_opts,
-                providers=["CPUExecutionProvider"],
-            )
+        self.decoder_input_names = []
+        self.decoder_output_names = []
+
+        print(f"-----{decoder}-----")
+        print(f"----input----")
+        for i in self.decoder.get_inputs():
+            print(i)
+            self.decoder_input_names.append(i.name)
+
+        print("-----output-----")
+
+        for i in self.decoder.get_outputs():
+            print(i)
+            self.decoder_output_names.append(i.name)
 
     def run_encoder(
         self,
-        mel: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        n_layer_cross_k, n_layer_cross_v = self.encoder.run(
-            [
-                self.encoder.get_outputs()[0].name,
-                self.encoder.get_outputs()[1].name,
-            ],
+        mel: np.ndarray,
+    ) -> List[np.ndarray]:
+        cross_kv = self.encoder.run(
+            self.encoder_output_names,
             {
-                self.encoder.get_inputs()[0].name: mel.numpy(),
+                self.encoder.get_inputs()[0].name: mel,
             },
         )
-        return torch.from_numpy(n_layer_cross_k), torch.from_numpy(n_layer_cross_v)
+        return cross_kv
 
-    def run_decoder(
-        self,
-        tokens: torch.Tensor,
-        n_layer_self_k_cache: torch.Tensor,
-        n_layer_self_v_cache: torch.Tensor,
-        n_layer_cross_k: torch.Tensor,
-        n_layer_cross_v: torch.Tensor,
-        positional_embedding: torch.Tensor,
-        mask: torch.Tensor,
-        dynamic: bool,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        if dynamic:
-            decoder = self.decoder_dynamic
-            logits, out_n_layer_self_k_cache, out_n_layer_self_v_cache = decoder.run(
-                [
-                    decoder.get_outputs()[0].name,
-                    decoder.get_outputs()[1].name,
-                    decoder.get_outputs()[2].name,
-                ],
-                {
-                    decoder.get_inputs()[0].name: tokens.numpy(),
-                    decoder.get_inputs()[1].name: n_layer_cross_k.numpy(),
-                    decoder.get_inputs()[2].name: n_layer_cross_v.numpy(),
-                },
-            )
-            return (
-                torch.from_numpy(logits),
-                torch.from_numpy(out_n_layer_self_k_cache),
-                torch.from_numpy(out_n_layer_self_v_cache),
-            )
-        else:
-            decoder = self.decoder_static
-            logits, out_n_layer_self_k_cache, out_n_layer_self_v_cache = decoder.run(
-                [
-                    decoder.get_outputs()[0].name,
-                    decoder.get_outputs()[1].name,
-                    decoder.get_outputs()[2].name,
-                ],
-                {
-                    decoder.get_inputs()[0].name: tokens.numpy(),
-                    decoder.get_inputs()[1].name: n_layer_self_k_cache.numpy(),
-                    decoder.get_inputs()[2].name: n_layer_self_v_cache.numpy(),
-                    decoder.get_inputs()[3].name: n_layer_cross_k.numpy(),
-                    decoder.get_inputs()[4].name: n_layer_cross_v.numpy(),
-                    decoder.get_inputs()[5].name: positional_embedding.numpy(),
-                    decoder.get_inputs()[6].name: mask.numpy(),
-                },
-            )
-            return (
-                torch.from_numpy(logits),
-                torch.from_numpy(out_n_layer_self_k_cache),
-                torch.from_numpy(out_n_layer_self_v_cache),
-            )
+    def run_decoder(self, inputs: List[np.ndarray]) -> List[np.ndarray]:
+        feed = {
+            self.decoder.get_inputs()[i].name: inputs[i] for i in range(len(inputs))
+        }
 
-    def get_self_cache(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        out = self.decoder.run(
+            self.decoder_output_names,
+            feed,
+        )
+        return out
+
+    def get_self_cache(self) -> List[np.ndarray]:
+        self_cache = []
         batch_size = 1
-        n_layer_self_k_cache = torch.zeros(
-            self.n_text_layer,
-            batch_size,
-            self.n_text_ctx,
-            self.n_text_state,
-        )
-        n_layer_self_v_cache = torch.zeros(
-            self.n_text_layer,
-            batch_size,
-            self.n_text_ctx,
-            self.n_text_state,
-        )
-        return n_layer_self_k_cache, n_layer_self_v_cache
-
-    def suppress_tokens(self, logits, is_initial: bool) -> None:
-        # suppress blank
-        if is_initial:
-            logits[self.eot] = float("-inf")
-            logits[self.blank] = float("-inf")
-
-        # suppress <|notimestamps|>
-        logits[self.no_timestamps] = float("-inf")
-
-        logits[self.sot] = float("-inf")
-        logits[self.no_speech] = float("-inf")
-
-        # logits is changed in-place
-        logits[self.translate] = float("-inf")
-
-    def detect_language(
-        self, n_layer_cross_k: torch.Tensor, n_layer_cross_v: torch.Tensor
-    ) -> int:
-        tokens = torch.tensor([[self.sot]], dtype=torch.int64)
-        offset = torch.zeros(1, dtype=torch.int64)
-        n_layer_self_k_cache, n_layer_self_v_cache = self.get_self_cache()
-
-        logits, n_layer_self_k_cache, n_layer_self_v_cache = self.run_decoder(
-            tokens=tokens,
-            n_layer_self_k_cache=n_layer_self_k_cache,
-            n_layer_self_v_cache=n_layer_self_v_cache,
-            n_layer_cross_k=n_layer_cross_k,
-            n_layer_cross_v=n_layer_cross_v,
-            offset=offset,
-        )
-        logits = logits.reshape(-1)
-        mask = torch.ones(logits.shape[0], dtype=torch.int64)
-        mask[self.all_language_tokens] = 0
-        logits[mask != 0] = float("-inf")
-        lang_id = logits.argmax().item()
-        print("detected language: ", self.id2lang[lang_id])
-        return lang_id
+        for i in range(self.n_text_layer):
+            k = np.zeros(
+                (batch_size, self.n_text_ctx, self.n_text_state), dtype=np.float32
+            )
+            v = np.zeros(
+                (batch_size, self.n_text_ctx, self.n_text_state), dtype=np.float32
+            )
+            self_cache.extend([k, v])
+        return self_cache
 
 
 def load_tokens(filename):
@@ -257,202 +151,137 @@ def load_tokens(filename):
 
 
 def load_audio(filename: str) -> Tuple[np.ndarray, int]:
-    data, sample_rate = librosa.load(filename, sr=None, mono=True)
-    if sample_rate != 16000:
-        data = librosa.resample(data, orig_sr=sample_rate, target_sr=16000)
+    data, sample_rate = sf.read(
+        filename,
+        always_2d=True,
+        dtype="float32",
+    )
+    data = data[:, 0]  # use only the first channel
     samples = np.ascontiguousarray(data)
     return samples, sample_rate
 
 
-def compute_features(filename: str, dim: int = 80) -> torch.Tensor:
-    """
-    Args:
-      filename:
-        Path to an audio file.
-    Returns:
-      Return a 1-D float32 tensor of shape (1, 80, 3000) containing the features.
-    """
+def compute_feat(filename: str, n_mels: int):
     wave, sample_rate = load_audio(filename)
-    # if sample_rate != 16000:
-    #     import librosa
+    if sample_rate != 16000:
+        import librosa
 
-    #     wave = librosa.resample(wave, orig_sr=sample_rate, target_sr=16000)
-    #     sample_rate = 16000
+        wave = librosa.resample(wave, orig_sr=sample_rate, target_sr=16000)
+        sample_rate = 16000
 
-    features = []
-    opts = knf.WhisperFeatureOptions()
-    opts.dim = dim
-    online_whisper_fbank = knf.OnlineWhisperFbank(opts)
-    online_whisper_fbank.accept_waveform(16000, wave)
-    online_whisper_fbank.input_finished()
-    for i in range(online_whisper_fbank.num_frames_ready):
-        f = online_whisper_fbank.get_frame(i)
-        f = torch.from_numpy(f)
-        features.append(f)
+    audio = whisper.pad_or_trim(wave)
+    assert audio.shape == (16000 * 30,), audio.shape
 
-    features = torch.stack(features)
-
-    log_spec = torch.clamp(features, min=1e-10).log10()
-    log_spec = torch.maximum(log_spec, log_spec.max() - 8.0)
-    mel = (log_spec + 4.0) / 4.0
-    # mel (T, 80)
-
-    # We pad 1500 frames at the end so that it is able to detect eot
-    # You can use another value instead of 1500.
-    mel = torch.nn.functional.pad(mel, (0, 0, 0, 1500), "constant", 0)
-    # Note that if it throws for a multilingual model,
-    # please use a larger value, say 300
-
-    target = 3000
-    if mel.shape[0] > target:
-        # -50 so that there are some zero tail paddings.
-        mel = mel[: target - 50]
-        mel = torch.nn.functional.pad(mel, (0, 0, 0, 50), "constant", 0)
-
-    # We don't need to pad it to 30 seconds now!
-    mel = torch.nn.functional.pad(mel, (0, 0, 0, target - mel.shape[0]), "constant", 0)
-
-    mel = mel.t().unsqueeze(0)
+    mel = whisper.log_mel_spectrogram(audio, n_mels=n_mels).unsqueeze(0)
+    assert mel.shape == (1, n_mels, 3000), mel.shape
 
     return mel
 
-def forward(model_type: str, model: OnnxModel, sound_file: str, lang: str, positional_embedding: np.ndarray, save_data: bool = False):
+
+def forward(model_type: str, model: OnnxModel, sound_file: str, lang: str, tokenizer):
     name = os.path.splitext(os.path.basename(sound_file))[0]
 
     model.sot_sequence[1] = model.lang2id[lang]
 
-    n_mels = model.n_mels
-    mel = compute_features(sound_file, dim=n_mels)
-    if save_data:
-        os.makedirs(f"calibrations_{model_type}/encoder/mel", exist_ok=True)
-        np.save(f"./calibrations_{model_type}/encoder/mel/{name}.npy", mel)
+    mel = compute_feat(sound_file, n_mels=model.n_mels).numpy()
 
-    n_layer_cross_k, n_layer_cross_v = model.run_encoder(mel)
+    os.makedirs(f"calibrations_{model_type}/encoder/mel", exist_ok=True)
+    np.save(f"./calibrations_{model_type}/encoder/mel/{name}.npy", mel)
+
+    cross_kv = model.run_encoder(mel)
     
-    n_layer_self_k_cache, n_layer_self_v_cache = model.get_self_cache()
+    self_kv = model.get_self_cache()
 
-    tokens = torch.tensor([model.sot_sequence], dtype=torch.int64)
-    offset = torch.zeros(1, dtype=torch.int64)
+    offset = np.array([0], dtype=np.int32)
+    for t in model.sot_sequence:
+        token = np.array([[t]], dtype=np.int32)  # sot
+        mask = causal_mask_1d(offset.item(), model.n_text_ctx).numpy()
 
-    if save_data:
-        os.makedirs(f"calibrations_{model_type}/decoder_main/tokens", exist_ok=True)
-        os.makedirs(f"calibrations_{model_type}/decoder_main/n_layer_cross_k", exist_ok=True)
-        os.makedirs(f"calibrations_{model_type}/decoder_main/n_layer_cross_v", exist_ok=True)
+        os.makedirs(f"calibrations_{model_type}/decoder/tokens", exist_ok=True)
+        os.makedirs(f"calibrations_{model_type}/decoder/offset", exist_ok=True)
+        os.makedirs(f"calibrations_{model_type}/decoder/mask", exist_ok=True)
 
-        np.save(f"./calibrations_{model_type}/decoder_main/tokens/{name}.npy", tokens)
-        np.save(f"./calibrations_{model_type}/decoder_main/n_layer_cross_k/{name}.npy", n_layer_cross_k)
-        np.save(f"./calibrations_{model_type}/decoder_main/n_layer_cross_v/{name}.npy", n_layer_cross_v)
+        np.save(f"calibrations_{model_type}/decoder/tokens/{name}_{offset.item()}.npy", token)
+        np.save(f"calibrations_{model_type}/decoder/offset/{name}_{offset.item()}.npy", offset)
+        np.save(f"calibrations_{model_type}/decoder/mask/{name}_{offset.item()}.npy", mask)
 
-    logits, n_layer_self_k_cache, n_layer_self_v_cache = model.run_decoder(
-        tokens=tokens,
-        n_layer_self_k_cache=n_layer_self_k_cache,
-        n_layer_self_v_cache=n_layer_self_v_cache,
-        n_layer_cross_k=n_layer_cross_k, # torch.from_numpy(np.fromfile("n_layer_cross_k.bin", dtype=np.float32).reshape(n_layer_cross_k.shape)),
-        n_layer_cross_v=n_layer_cross_v, # torch.from_numpy(np.fromfile("n_layer_cross_v.bin", dtype=np.float32).reshape(n_layer_cross_v.shape)),
-        positional_embedding=None,
-        mask=None,
-        dynamic=True,
-    )
-    offset += len(model.sot_sequence)
-    # logits.shape (batch_size, tokens.shape[1], vocab_size)
-    logits = logits[0, -1]
-    model.suppress_tokens(logits, is_initial=True)
-    #  logits = logits.softmax(dim=-1)
-    # for greedy search, we don't need to compute softmax or log_softmax
-    max_token_id = logits.argmax(dim=-1)
-    results = []
-    is_broke = False
-    for i in range(model.n_text_ctx - len(model.sot_sequence)):
-        if max_token_id == model.eot:
-            is_broke = True
-            break
-        results.append(max_token_id.item())
-        tokens = torch.tensor([[results[-1]]])
-        mask = torch.zeros([model.n_text_ctx]).to(tokens.device)
-        mask[:model.n_text_ctx - offset[0] - 1] = -torch.inf
+        for i in range(0, len(self_kv), 2):
+            os.makedirs(f"calibrations_{model_type}/decoder/self_k_{i // 2}", exist_ok=True)
+            os.makedirs(f"calibrations_{model_type}/decoder/self_v_{i // 2}", exist_ok=True)
 
-        if save_data:
-            os.makedirs(f"calibrations_{model_type}/decoder_loop/tokens", exist_ok=True)
-            os.makedirs(f"calibrations_{model_type}/decoder_loop/n_layer_self_k_cache", exist_ok=True)
-            os.makedirs(f"calibrations_{model_type}/decoder_loop/n_layer_self_v_cache", exist_ok=True)
-            os.makedirs(f"calibrations_{model_type}/decoder_loop/n_layer_cross_k", exist_ok=True)
-            os.makedirs(f"calibrations_{model_type}/decoder_loop/n_layer_cross_v", exist_ok=True)
-            os.makedirs(f"calibrations_{model_type}/decoder_loop/positional_embedding", exist_ok=True)
-            os.makedirs(f"calibrations_{model_type}/decoder_loop/mask", exist_ok=True)
+            np.save(f"calibrations_{model_type}/decoder/self_k_{i // 2}/{name}_{offset.item()}.npy", self_kv[i])
+            np.save(f"calibrations_{model_type}/decoder/self_v_{i // 2}/{name}_{offset.item()}.npy", self_kv[i + 1])
 
-            np.save(f"./calibrations_{model_type}/decoder_loop/tokens/{name}_{i}.npy", tokens)
-            np.save(f"./calibrations_{model_type}/decoder_loop/n_layer_self_k_cache/{name}_{i}.npy", n_layer_self_k_cache)
-            np.save(f"./calibrations_{model_type}/decoder_loop/n_layer_self_v_cache/{name}_{i}.npy", n_layer_self_v_cache)
-            np.save(f"./calibrations_{model_type}/decoder_loop/n_layer_cross_k/{name}_{i}.npy", n_layer_cross_k)
-            np.save(f"./calibrations_{model_type}/decoder_loop/n_layer_cross_v/{name}_{i}.npy", n_layer_cross_v)
-            np.save(f"./calibrations_{model_type}/decoder_loop/positional_embedding/{name}_{i}.npy", positional_embedding[offset[0] : offset[0] + tokens.shape[-1]])
-            np.save(f"./calibrations_{model_type}/decoder_loop/mask/{name}_{i}.npy", mask)
+        for i in range(0, len(cross_kv), 2):
+            os.makedirs(f"calibrations_{model_type}/decoder/cross_k_{i // 2}", exist_ok=True)
+            os.makedirs(f"calibrations_{model_type}/decoder/cross_v_{i // 2}", exist_ok=True)
 
-        logits, n_layer_self_k_cache, n_layer_self_v_cache = model.run_decoder(
-            tokens=tokens,
-            n_layer_self_k_cache=n_layer_self_k_cache,
-            n_layer_self_v_cache=n_layer_self_v_cache,
-            n_layer_cross_k=n_layer_cross_k,
-            n_layer_cross_v=n_layer_cross_v,
-            positional_embedding=positional_embedding[offset[0] : offset[0] + tokens.shape[-1]],
-            mask=mask,
-            dynamic=False,
-        )
+            np.save(f"calibrations_{model_type}/decoder/cross_k_{i // 2}/{name}_{offset.item()}.npy", cross_kv[i])
+            np.save(f"calibrations_{model_type}/decoder/cross_v_{i // 2}/{name}_{offset.item()}.npy", cross_kv[i + 1])
+
+        out = model.run_decoder([token] + self_kv + cross_kv + [offset, mask])
+
+        for i in range(1, len(out)):
+            self_kv[i - 1][:, offset.item() : offset.item() + 1, :] = out[i]
+
         offset += 1
-        logits = logits[0, -1]
-        model.suppress_tokens(logits, is_initial=False)
-        max_token_id = logits.argmax(dim=-1)
-        # print("token: ", results[-1])
-    if not is_broke:
-        results = []
-    return results
 
+    idx = out[0][0, 0].argmax()
 
-def min_distance(word1: str, word2: str) -> int:
- 
-    row = len(word1) + 1
-    column = len(word2) + 1
- 
-    cache = [ [0]*column for i in range(row) ]
- 
-    for i in range(row):
-        for j in range(column):
- 
-            if i ==0 and j ==0:
-                cache[i][j] = 0
-            elif i == 0 and j!=0:
-                cache[i][j] = j
-            elif j == 0 and i!=0:
-                cache[i][j] = i
-            else:
-                if word1[i-1] == word2[j-1]:
-                    cache[i][j] = cache[i-1][j-1]
-                else:
-                    replace = cache[i-1][j-1] + 1
-                    insert = cache[i][j-1] + 1
-                    remove = cache[i-1][j] + 1
- 
-                    cache[i][j] = min(replace, insert, remove)
- 
-    return cache[row-1][column-1]
+    ans = []
+
+    while idx != model.eot and offset.item() < 200:
+        ans.append(idx)
+        token = np.array([[idx]], dtype=np.int32)  # no_timestamps
+        for i in range(1, len(out)):
+            self_kv[i - 1][:, offset.item() : offset.item() + 1, :] = out[i]
+
+        mask = causal_mask_1d(offset.item(), model.n_text_ctx).numpy()
+
+        np.save(f"calibrations_{model_type}/decoder/tokens/{name}_{offset.item()}.npy", token)
+        np.save(f"calibrations_{model_type}/decoder/offset/{name}_{offset.item()}.npy", offset)
+        np.save(f"calibrations_{model_type}/decoder/mask/{name}_{offset.item()}.npy", mask)
+
+        for i in range(0, len(self_kv), 2):
+            np.save(f"calibrations_{model_type}/decoder/self_k_{i // 2}/{name}_{offset.item()}.npy", self_kv[i])
+            np.save(f"calibrations_{model_type}/decoder/self_v_{i // 2}/{name}_{offset.item()}.npy", self_kv[i + 1])
+
+        for i in range(0, len(cross_kv), 2):
+            np.save(f"calibrations_{model_type}/decoder/cross_k_{i // 2}/{name}_{offset.item()}.npy", cross_kv[i])
+            np.save(f"calibrations_{model_type}/decoder/cross_v_{i // 2}/{name}_{offset.item()}.npy", cross_kv[i + 1])
+
+        out = model.run_decoder([token] + self_kv + cross_kv + [offset, mask])
+        idx = out[0][0, 0].argmax()
+
+        offset += 1
+
+    print(ans)
+    text = "".join(tokenizer.decode(ans)).strip()
+    print(text)
 
 
 def main():
     args = get_args()
     print(args)
     model_type = args.model
-    max_num = args.max_num
-    encoder_filename = f"{model_type}/{model_type}-encoder.onnx"
-    decoder_dynamic_filename = f"{model_type}/{model_type}-decoder-main.onnx"
-    decoder_static_filename = f"{model_type}/{model_type}-decoder-loop.onnx"
-    pe_file = f"{model_type}/{model_type}-positional-embedding.npy"
-    token_file = f"{model_type}/{model_type}-tokens.txt"
-    model = OnnxModel(encoder_filename, decoder_dynamic_filename, decoder_static_filename)
+
+    args = get_args()
+    print(vars(args))
+
+    torch_model = whisper.load_model(args.model)
+    tokenizer = whisper.tokenizer.get_tokenizer(
+        torch_model.is_multilingual, num_languages=torch_model.num_languages
+    )
+
+    model = OnnxModel(f"./{args.model}-encoder.onnx", f"./{args.model}-decoder.onnx")
 
     # [sot, lang, task, notimestamps]
     model.sot_sequence[1] = model.lang2id["en"]
 
-    positional_embedding = torch.from_numpy(np.load(pe_file))
+    # tiny.en: [50257, 50362]
+    # tiny: [50258, 50259, 50359, 50363]
+    print("sot sequence", model.sot_sequence)
+    print(f"model.n_text_layer: {model.n_text_layer}")
 
     dataset = {
         'en': ['example/en.mp3'],
@@ -467,19 +296,21 @@ def main():
     gen_num = 0
     for lang in dataset.keys():
         for sound_path in dataset[lang]:
-            if max_num <= 0:
-                save_data = True
-            else:
-                save_data = gen_num < max_num
-
-            results = forward(model_type, model, sound_path, lang, positional_embedding, save_data)
+            forward(model_type, model, sound_path, lang, tokenizer)
 
             gen_num += 1
 
-    tar_dirs = [f"calibrations_{model_type}/encoder/mel", f"calibrations_{model_type}/decoder_main/tokens", f"calibrations_{model_type}/decoder_main/n_layer_cross_k",
-                f"calibrations_{model_type}/decoder_main/n_layer_cross_v", f"calibrations_{model_type}/decoder_loop/tokens", f"calibrations_{model_type}/decoder_loop/n_layer_self_k_cache",
-                f"calibrations_{model_type}/decoder_loop/n_layer_self_v_cache", f"calibrations_{model_type}/decoder_loop/n_layer_cross_k", f"calibrations_{model_type}/decoder_loop/n_layer_cross_v",
-                f"calibrations_{model_type}/decoder_loop/positional_embedding", f"calibrations_{model_type}/decoder_loop/mask"]
+    tar_dirs = [f"calibrations_{model_type}/encoder/mel", 
+                f"calibrations_{model_type}/decoder/tokens",
+                f"calibrations_{model_type}/decoder/mask",
+                f"calibrations_{model_type}/decoder/offset", 
+    ]
+    for i in range(model.n_text_layer):
+        tar_dirs.append(f"calibrations_{model_type}/decoder/self_k_{i}")
+        tar_dirs.append(f"calibrations_{model_type}/decoder/self_v_{i}")
+
+        tar_dirs.append(f"calibrations_{model_type}/decoder/cross_k_{i}")
+        tar_dirs.append(f"calibrations_{model_type}/decoder/cross_v_{i}")
     
     for td in tar_dirs:
         tar_filename = os.path.join(td, "..", os.path.basename(td) + ".tar.gz")
@@ -488,11 +319,48 @@ def main():
             tar.add(f)
         tar.close()
         print(f"Save {tar_filename}")
+
+    # save ax config
+    import json
+    ax_config = json.load(open("config_whisper_encoder_u16.json"))
+    ax_config["quant"]["input_configs"] = []
+    for inp in model.encoder.get_inputs():
+        name = inp.name
+        ax_config["quant"]["input_configs"].append(
+            {
+                "tensor_name": name,
+                "calibration_dataset": f"./calibrations_{model_type}/encoder/{name}.tar.gz",
+                "calibration_size": -1,
+                "calibration_format": "Numpy"
+            }
+        )
+
+    with open(f"config_whisper_{model_type}_encoder.json", "w") as f:
+        json.dump(ax_config, f, indent=4)
+    print(f"Dump config to config_whisper_{model_type}_encoder.json")
+
+    ax_config = json.load(open("config_whisper_decoder_u16.json"))
+    ax_config["quant"]["input_configs"] = []
+    for inp in model.decoder.get_inputs():
+        name = inp.name
+        ax_config["quant"]["input_configs"].append(
+            {
+                "tensor_name": name,
+                "calibration_dataset": f"./calibrations_{model_type}/decoder/{name}.tar.gz",
+                "calibration_size": -1,
+                "calibration_format": "Numpy"
+            }
+        )
+        
+    with open(f"config_whisper_{model_type}_decoder.json", "w") as f:
+        json.dump(ax_config, f, indent=4)
+    print(f"Dump config to config_whisper_{model_type}_decoder.json")
     
 
 if __name__ == "__main__":
     main()
 
 '''
+Usage:
 python3 ./generate_data.py --model tiny
 '''

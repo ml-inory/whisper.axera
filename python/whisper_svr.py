@@ -12,16 +12,18 @@ import cgi
 # 模型缓存：避免每次请求都重新加载
 _model_cache = {}
 
+
 def get_model(model_type, model_path, language, task):
     key = (model_type, model_path, language, task)
     if key not in _model_cache:
-        print(f"Loading model: type={model_type}, path={model_path}, lang={language}, task={task}")
+        print(
+            f"Loading model: type={model_type}, path={model_path}, lang={language}, task={task}"
+        )
         _model_cache[key] = Whisper(model_type, model_path, language, task)
     return _model_cache[key]
 
 
 class WhisperHandler(BaseHTTPRequestHandler):
-
     def _send_json(self, obj, status=200):
         data = json.dumps(obj, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
@@ -42,19 +44,19 @@ class WhisperHandler(BaseHTTPRequestHandler):
             return
 
         # 解析 multipart/form-data
-        content_type = self.headers.get('Content-Type')
+        content_type = self.headers.get("Content-Type")
         if not content_type:
             self._send_json({"error": "Missing Content-Type"}, 400)
             return
 
         ctype, pdict = cgi.parse_header(content_type)
 
-        if ctype != 'multipart/form-data':
+        if ctype != "multipart/form-data":
             self._send_json({"error": "Only multipart/form-data is supported"}, 400)
             return
 
-        pdict['boundary'] = bytes(pdict['boundary'], "utf-8")
-        pdict['CONTENT-LENGTH'] = int(self.headers['Content-Length'])
+        pdict["boundary"] = bytes(pdict["boundary"], "utf-8")
+        pdict["CONTENT-LENGTH"] = int(self.headers["Content-Length"])
 
         form = cgi.parse_multipart(self.rfile, pdict)
 
@@ -96,7 +98,9 @@ class WhisperHandler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Whisper Server")
-    parser.add_argument("--port", type=int, default=8000, help="Port to run the server on")
+    parser.add_argument(
+        "--port", type=int, default=8000, help="Port to run the server on"
+    )
     args = parser.parse_args()
     port = args.port
     server = HTTPServer(("0.0.0.0", port), WhisperHandler)
