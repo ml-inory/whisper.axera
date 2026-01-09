@@ -22,7 +22,7 @@ def get_args():
         "-p",
         type=str,
         required=False,
-        default="../models/models-ax650",
+        default="../models-ax650",
         help="model path for *.axmodel, tokens.txt, positional_embedding.bin",
     )
     parser.add_argument(

@@ -242,7 +242,7 @@ class Whisper:
 
         ans = []
 
-        while idx != eot and offset.item() < 100:
+        while idx != eot and offset.item() < self.config.n_text_ctx:
             ans.append(idx)
             token = np.array([[idx]], dtype=np.int32)
 
