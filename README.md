@@ -158,13 +158,13 @@ cd cpp
 在 AX650N 设备上执行
 
 ```
-./install/whisper -w ../demo.wav
+./install/whisper_cli -w ../demo.wav
 ```
 
 或  
 
 ```
-./install/whisper --model_type small --model_path ../models -w ../demo.wav
+./install/whisper_cli --model_type small --model_path ../models-ax650 -w ../demo.wav
 ```
 
 输出结果
@@ -172,34 +172,28 @@ cd cpp
 ```
 root@ax650:/mnt/qtang/whisper.axera/cpp# ./install/whisper --wav ../demo.wav --model_type small --model_path ../models/ --language zh
 wav_file: ../demo.wav
-model_path: ../models/
-model_type: small
+model_path: ../models-ax650
+model_type: tiny
 language: zh
-Encoder run take 188.30 ms
-First token: 17556       take 81.88ms
-Next Token: 20844        take 29.64ms
-Next Token: 7781         take 29.70ms
-Next Token: 20204        take 29.64ms
-Next Token: 28455        take 29.65ms
-Next Token: 31962        take 29.61ms
-Next Token: 6336         take 29.67ms
-Next Token: 254          take 29.63ms
-Next Token: 2930         take 29.61ms
-Next Token: 236          take 29.56ms
-Next Token: 36135        take 29.64ms
-Next Token: 15868        take 29.71ms
-Next Token: 252          take 29.51ms
-Next Token: 1546         take 29.63ms
-Next Token: 46514        take 29.51ms
-Next Token: 50257        take 29.69ms
-All take 801.13 ms
-Result: 甚至出现交易几乎停滞的情况
+Init whisper success, take 0.4360seconds
+Result: 甚至出现交易几乎停止的情况
+RTF: 0.1166
+
 ```
 
 ### 服务端
 
 ```
-./install/whisper_srv --model_type tiny --model_path ../models/models-ax650 --language zh --port 8080
+./install/whisper_srv --model_type tiny --model_path ../models-ax650 --language zh --port 8080
+
+port: 8080
+model_path: ../models-ax650
+model_type: tiny
+language: zh
+[I][                            main][  60]: Initializing server...
+[I][                            main][  65]: Init server success
+[I][                           start][  32]: Start server at port 8080, POST binary stream to IP:8080/asr
+
 ```
 
 ### 客户端

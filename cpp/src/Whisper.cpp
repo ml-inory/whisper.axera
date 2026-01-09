@@ -13,7 +13,9 @@
 #include <type_traits>
 #include <stdexcept>
 
-#include "ax_dmadim_api.h"
+#if defined(CHIP_AX650)
+    #include "ax_dmadim_api.h"
+#endif
 
 #define WHISPER_SAMPLE_RATE 16000
 #define WHISPER_N_FFT       400
@@ -263,9 +265,11 @@ void Whisper::dma_cross_kv() {
     int decoder_start_index = 1 + 2 * n_text_layer;
 
     for (int i = 0; i < cross_kv_num; i++) {
+#if defined(CHIP_AX650)      
         AX_U64 phySrc = m_encoder.get_output_phy_addr(i);
         AX_U64 phyDst = m_decoder.get_input_phy_addr(decoder_start_index + i);
         int size = m_encoder.get_output_size(i);
+
         int ret = AX_DMA_MemCopy(phyDst, phySrc, (AX_U64)size);
         if (ret) {
             ALOGW("AX_DMA_MemCopy failed! ret=0x%x, fallback to sys memcpy", ret);
@@ -273,6 +277,9 @@ void Whisper::dma_cross_kv() {
             m_decoder.set_input(decoder_start_index + i, m_encoder.get_output_ptr(i));
             return;
         }
+#else
+        m_decoder.set_input(decoder_start_index + i, m_encoder.get_output_ptr(i));
+#endif                
     }
 }
 
