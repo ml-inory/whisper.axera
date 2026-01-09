@@ -2,14 +2,19 @@
 #include <vector>
 #include <fstream>
 #include <ax_sys_api.h>
-#include <ctime>
-#include <sys/time.h>
+#include <ax_engine_api.h>
 
 #include "cmdline.hpp"
-#include "AudioFile.h"
-#include "Whisper.hpp"
 #include "utils/timer.hpp"
+#include "AudioFile.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+#include "ax_whisper_api.h"
+#ifdef __cplusplus
+}
+#endif
 
 int main(int argc, char** argv) {
     cmdline::parser cmd;
@@ -72,30 +77,34 @@ int main(int argc, char** argv) {
 
     Timer timer;
 
-    // convert to mono
-    if (audio_file.isStereo()) {
-        for (int i = 0; i < n_samples; i++) {
-            samples[i] = (samples[i] + audio_file.samples[1][i]) / 2;
-        }
-    }
+    // Init 
+    timer.start();
+    AX_WHISPER_HANDLE handle = AX_WHISPER_Init(model_type.c_str(), model_path.c_str(), language.c_str());
+    timer.stop();
 
-    Whisper whisper(model_type, language);
-    if (!whisper.load_models(model_path)) {
-        printf("load models failed!\n");
+    if (!handle) {
+        printf("AX_WHISPER_Init failed!\n");
         return -1;
     }
 
-    printf("Init whisper success\n");
+    printf("Init whisper success, take %.4fseconds\n", timer.elapsed<std::chrono::seconds>());
 
+    // Run
     timer.start();
-    std::string result;
-    if (!whisper.run(samples, result)) {
-        printf("run whisper failed!\n");
+    char* result;
+    if (0 != AX_WHISPER_RunFile(handle, wav_file.c_str(), &result)) {
+        printf("AX_WHISPER_Run failed!\n");
+        AX_WHISPER_Uninit(handle);
         return -1;
     }
     timer.stop();
 
-    printf("Result: %s\n", result.c_str());
+    printf("Result: %s\n", result);
     printf("RTF: %.4f\n", timer.elapsed<std::chrono::seconds>() / duration);
+
+    // Uninit
+    free(result);
+    AX_WHISPER_Uninit(handle);
+
     return 0;
 }

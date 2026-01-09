@@ -1,23 +1,25 @@
 #pragma once
 
 #include "httplib.h"
-#include "Whisper.hpp"
 #include "utils/logger.h"
-
+#include "nlohmann/json.hpp"
+#include "api/ax_whisper_api.h"
 
 class WhisperHTTPServer {
 private:
     httplib::Server m_srv;
-    Whisper m_model;
+    AX_WHISPER_HANDLE m_model;
 
 public:
     WhisperHTTPServer() = default;
 
-    ~WhisperHTTPServer() = default;
+    ~WhisperHTTPServer() {
+        AX_WHISPER_Uninit(m_model);
+    }
 
     bool init(const std::string& model_path, const std::string& model_type, const std::string& language) {
-        m_model.init(model_type, language);
-        if (!m_model.load_models(model_path)) {
+        m_model = AX_WHISPER_Init(model_type.c_str(), model_path.c_str(), language.c_str());
+        if (!m_model) {
             ALOGE("whisper load models failed!");
             return false;
         }
@@ -72,8 +74,8 @@ private:
             std::vector<float> audio_data = parseBinaryToFloats(req.body);
 
             // 5. 跑模型
-            std::string text;
-            if (!m_model.run(audio_data, text)) {
+            char* text;
+            if (0 != AX_WHISPER_RunPCM(m_model, audio_data.data(), audio_data.size(), &text)) {
                 ALOGE("run whisper failed!\n");
                 res.status = 400;
                 res.set_content(R"({"error": "Run model failed!"})", "application/json");

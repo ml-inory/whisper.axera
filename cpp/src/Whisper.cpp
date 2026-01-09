@@ -22,20 +22,20 @@
 
 #define NEG_INF             -std::numeric_limits<float>::infinity()
 
-template<typename T>
-void save_bin(const std::vector<T>& data, const char* filename) {
-    FILE* fp = fopen(filename, "wb");
-    fwrite(data.data(), sizeof(T), data.size(), fp);
-    fclose(fp);
-}
+// template<typename T>
+// void save_bin(const std::vector<T>& data, const char* filename) {
+//     FILE* fp = fopen(filename, "wb");
+//     fwrite(data.data(), sizeof(T), data.size(), fp);
+//     fclose(fp);
+// }
 
-template<typename T>
-void load_bin(std::vector<T>& data, const char* filename, int size) {
-    data.resize(size);
-    FILE* fp = fopen(filename, "rb");
-    fread(data.data(), sizeof(T), size, fp);
-    fclose(fp);
-}
+// template<typename T>
+// void load_bin(std::vector<T>& data, const char* filename, int size) {
+//     data.resize(size);
+//     FILE* fp = fopen(filename, "rb");
+//     fread(data.data(), sizeof(T), size, fp);
+//     fclose(fp);
+// }
 
 static int argmax(const std::vector<float>& logits) {
     auto max_iter = std::max_element(logits.begin(), logits.end());
@@ -70,8 +70,8 @@ Whisper::Whisper(const std::string& model_type, const std::string& language):
 }
 
 Whisper::~Whisper() {
-    m_encoder.Release();
-    m_decoder.Release();
+    m_encoder.unload_model();
+    m_decoder.unload_model();
 }
 
 bool Whisper::init(const std::string& model_type, const std::string& language) {
@@ -89,18 +89,22 @@ bool Whisper::load_models(const std::string& model_root) {
 
     int ret = 0;
     std::ifstream fs(config_path);
+    if (!fs.is_open()) {
+        ALOGE("Cannot open config file: %s", config_path.c_str());
+        return false;
+    }
     m_config = json::parse(fs);
     m_config["all_language_tokens"] = json(stringToVector<int>(m_config["all_language_tokens"]));
     m_config["all_language_codes"] = json(stringToVector<std::string>(m_config["all_language_codes"]));
     fs.close();
 
-    ret = m_encoder.Init(encoder_path.c_str());
+    ret = m_encoder.load_model(encoder_path.c_str());
     if (ret) {
         ALOGE("encoder init failed! ret=0x%x\n", ret);
         return false;
     }
 
-    ret = m_decoder.Init(decoder_path.c_str());
+    ret = m_decoder.load_model(decoder_path.c_str());
     if (ret) {
         ALOGE("decoder init failed! ret=0x%x\n", ret);
         return false;
@@ -148,7 +152,7 @@ std::vector<float> Whisper::preprocess(std::vector<float>& audio_data, int n_mel
     int n_len = mel[0].size();
 
     // clamping and normalization
-    double mmax = -1e20;
+    float mmax = -std::numeric_limits<float>::max();
     for (int i = 0; i < n_mels; i++) {
         for (int n = 0; n < n_len; n++) {
             mel[i][n] = std::log10(std::max(mel[i][n], 1e-10f));
@@ -180,8 +184,8 @@ bool Whisper::run(std::vector<float>& audio_data, std::string& result) {
     int n_mels = m_config["n_mels"];
     std::vector<float> mel = preprocess(audio_data, n_mels);
 
-    m_encoder.SetInput(mel.data(), 0);
-    int ret = m_encoder.Run();
+    m_encoder.set_input(0, mel.data());
+    int ret = m_encoder.run();
     if (ret) {
         ALOGE("encoder run failed! ret=0x%x", ret);
         return false;
@@ -259,14 +263,16 @@ void Whisper::dma_cross_kv() {
     int decoder_start_index = 1 + 2 * n_text_layer;
 
     for (int i = 0; i < cross_kv_num; i++) {
-        AX_U64 phySrc = m_encoder.GetOutputPhyAddr(i);
-        AX_U64 phyDst = m_decoder.GetInputPhyAddr(decoder_start_index + i);
-        // void* virSrc = m_encoder.GetOutputVirtAddr(i);
-        // void* virDst = m_decoder.GetInputVirtAddr(decoder_start_index + i);
-        int size = m_encoder.GetOutputSize(i);
-        AX_DMA_MemCopy(phyDst, phySrc, (AX_U64)size);
-        // memcpy(virDst, virSrc, size);
-        // m_decoder.SetInput(m_encoder.GetOutputVirtAddr(i), decoder_start_index + i);
+        AX_U64 phySrc = m_encoder.get_output_phy_addr(i);
+        AX_U64 phyDst = m_decoder.get_input_phy_addr(decoder_start_index + i);
+        int size = m_encoder.get_output_size(i);
+        int ret = AX_DMA_MemCopy(phyDst, phySrc, (AX_U64)size);
+        if (ret) {
+            ALOGW("AX_DMA_MemCopy failed! ret=0x%x, fallback to sys memcpy", ret);
+
+            m_decoder.set_input(decoder_start_index + i, m_encoder.get_output_ptr(i));
+            return;
+        }
     }
 }
 
@@ -286,26 +292,21 @@ int Whisper::run_decoder(int token, int offset) {
 
     causal_mask_1d(offset);
 
-    m_decoder.SetInput(&token, 0);
+    m_decoder.set_input(0, &token);
     for (int i = 0; i < n_text_layer; i++) {
         int self_k_index = self_kv_index + i * 2;
         int self_v_index = self_kv_index + i * 2 + 1;
 
-        m_decoder.SetInput(m_feature.self_k_cache.data() + i * n_text_ctx * n_text_state, 
-            self_k_index);
-        m_decoder.SetInput(m_feature.self_v_cache.data() + i * n_text_ctx * n_text_state, 
-            self_v_index);
-
-        // printf("set self_k_cache[%d] to decoder input %d\n", i, self_k_index);
-        // printf("set self_v_cache[%d] to decoder input %d\n", i, self_v_index);
+        m_decoder.set_input(self_k_index, m_feature.self_k_cache.data() + i * n_text_ctx * n_text_state);
+        m_decoder.set_input(self_v_index, m_feature.self_v_cache.data() + i * n_text_ctx * n_text_state);
     }
 
     dma_cross_kv();
 
-    m_decoder.SetInput(&offset, offset_index);
-    m_decoder.SetInput(m_feature.mask.data(), mask_index);
+    m_decoder.set_input(offset_index, &offset);
+    m_decoder.set_input(mask_index, m_feature.mask.data());
 
-    int ret = m_decoder.Run();
+    int ret = m_decoder.run();
     if (ret) {
         ALOGE("decoder run failed! ret=0x%x", ret);
         return false;
@@ -319,14 +320,14 @@ int Whisper::run_decoder(int token, int offset) {
         float* k_cache_ptr = m_feature.self_k_cache.data() + 
                            i * n_text_ctx * n_text_state + 
                            offset * n_text_state;
-        m_decoder.GetOutput(k_cache_ptr, k_output_index);
+        m_decoder.get_output(k_output_index, k_cache_ptr);
         
         float* v_cache_ptr = m_feature.self_v_cache.data() + 
                            i * n_text_ctx * n_text_state + 
                            offset * n_text_state;
-        m_decoder.GetOutput(v_cache_ptr, v_output_index);
+        m_decoder.get_output(v_output_index, v_cache_ptr);
     }
 
-    m_decoder.GetOutput(m_feature.logits.data(), 0);
+    m_decoder.get_output(0, m_feature.logits.data());
     return argmax(m_feature.logits);
 }

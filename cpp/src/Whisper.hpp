@@ -1,7 +1,8 @@
 #pragma once
 
-#include "EngineWrapper.hpp"
+// #include "EngineWrapper.hpp"
 #include "utils/nlohmann/json.hpp"
+#include "ax_model_runner/ax_model_runner.hpp"
 
 #include <array>
 
@@ -49,8 +50,8 @@ private:
     std::string m_model_type;
     std::string m_lang;    
 
-    EngineWrapper m_encoder;
-    EngineWrapper m_decoder;
+    AxModelRunner m_encoder;
+    AxModelRunner m_decoder;
     std::vector<float> m_pe;
     std::vector<std::string> m_token_tables;
     json m_config;

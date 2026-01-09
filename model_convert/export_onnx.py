@@ -30,6 +30,7 @@ from whisper.model import (
     ResidualAttentionBlock,
     TextDecoder,
 )
+import json
 
 
 def get_args():
@@ -622,6 +623,8 @@ def main():
     }
     print(f"encoder_meta_data: {encoder_meta_data}")
     add_meta_data(filename=encoder_filename, meta_data=encoder_meta_data)
+    with open(f"{name}/{name}_config.json", "w") as f:
+        json.dump(encoder_meta_data, f, indent=4)
 
     tokens = torch.tensor([[tokenizer.sot]], dtype=torch.int32)
     decoder = TextDecoderTensorCache(model.decoder, model.dims.n_text_ctx)
