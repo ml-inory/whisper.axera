@@ -9,6 +9,7 @@
  **************************************************************************************************/
 #include "EngineWrapper.hpp"
 #include "utils/io.hpp"
+#include "utils/memory_utils.hpp"
 
 #include <cstdlib>
 
@@ -184,33 +185,12 @@ int EngineWrapper::Init(const char* strModelPath, uint32_t nNpuType)
     AX_U64 u64ModelBufferPhyAddr = 0;
     AX_U32 nModelBufferSize = 0;
 
-    std::vector<char> model_buffer;
-
-    if (bLoadModelUseCmm) {
-        if (!utils::read_file(strModelPath, (AX_VOID **)&pModelBufferVirAddr, u64ModelBufferPhyAddr, nModelBufferSize)) {
-            printf("read model(%s) fail\n", strModelPath);
-            return -1;
-        }
-    }
-    else {
-        if (!utils::read_file(strModelPath, model_buffer)) {
-            printf("read model(%s) fail\n", strModelPath);
-            return -1;
-        }
-
-        pModelBufferVirAddr = model_buffer.data();
-        nModelBufferSize = model_buffer.size();
-    }
+    MMap model_buffer(strModelPath);
+    pModelBufferVirAddr = (char*)model_buffer.data();
+    nModelBufferSize = model_buffer.size();
 
     auto freeModelBuffer = [&]() {
-        if (bLoadModelUseCmm) {
-            if (u64ModelBufferPhyAddr != 0) {
-                AX_SYS_MemFree(u64ModelBufferPhyAddr, &pModelBufferVirAddr);
-            }
-        }
-        else {
-            std::vector<char>().swap(model_buffer);
-        }
+        model_buffer.close_file();
         return;
     };
 
@@ -335,9 +315,21 @@ int EngineWrapper::GetOutputSize(int index) {
     return m_io.pOutputs[index].nSize;
 }
 
-void* EngineWrapper::GetOutputPtr(int index) {
+void* EngineWrapper::GetInputVirtAddr(int index) {
+    return m_io.pInputs[index].pVirAddr;
+}
+
+AX_U64 EngineWrapper::GetInputPhyAddr(int index) {
+    return m_io.pInputs[index].phyAddr;
+}
+
+void* EngineWrapper::GetOutputVirtAddr(int index) {
     utils::cache_io_flush(&m_io.pOutputs[index]);
     return m_io.pOutputs[index].pVirAddr;
+}
+
+AX_U64 EngineWrapper::GetOutputPhyAddr(int index) {
+    return m_io.pOutputs[index].phyAddr;
 }
 
 int EngineWrapper::Release()

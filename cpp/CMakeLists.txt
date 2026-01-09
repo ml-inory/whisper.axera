@@ -22,6 +22,7 @@ link_directories(${MSP_LIB_DIR})
 
 include_directories(src)
 aux_source_directory(src SRC)
+aux_source_directory(src/utils SRC)
 
 add_executable(whisper whisper.cpp ${SRC})
 target_link_libraries(whisper ${MSP_LIBS} opencc marisa)

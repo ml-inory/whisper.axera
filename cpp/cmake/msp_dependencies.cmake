@@ -20,5 +20,6 @@ set(MSP_LIB_DIR ${BSP_MSP_DIR}/lib)
 
 list(APPEND MSP_LIBS
         ax_sys
+        ax_dmadim
         ax_engine
         ax_interpreter)

@@ -40,7 +40,11 @@ public:
     int GetInputSize(int index);
     int GetOutputSize(int index);
 
-    void* GetOutputPtr(int index);
+    void* GetInputVirtAddr(int index);
+    AX_U64 GetInputPhyAddr(int index);
+
+    void* GetOutputVirtAddr(int index);
+    AX_U64 GetOutputPhyAddr(int index);
 
     int Release();
 

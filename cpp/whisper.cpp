@@ -14,7 +14,7 @@
 int main(int argc, char** argv) {
     cmdline::parser cmd;
     cmd.add<std::string>("wav", 'w', "wav file", true, "");
-    cmd.add<std::string>("model_type", 0, "tiny, base, small, turbo, large", false, "turbo");
+    cmd.add<std::string>("model_type", 't', "tiny, base, small, turbo, large", false, "turbo");
     cmd.add<std::string>("model_path", 'p', "model path for *.axmodel, tokens.txt, positional_embedding.bin", false, "../models/models-ax650");
     cmd.add<std::string>("language", 0, "en, zh", false, "zh");
     cmd.parse_check(argc, argv);
@@ -81,6 +81,8 @@ int main(int argc, char** argv) {
         return -1;
     }
 
+    printf("Init whisper success\n");
+
     timer.start();
     std::string result;
     if (!whisper.run(samples, result)) {
@@ -89,7 +91,7 @@ int main(int argc, char** argv) {
     }
     timer.stop();
 
-    printf("result: %s\n", result.c_str());
+    printf("Result: %s\n", result.c_str());
     printf("RTF: %.4f\n", timer.elapsed<std::chrono::seconds>() / duration);
     return 0;
 }
