@@ -15,7 +15,11 @@ int main(int argc, char** argv) {
     cmdline::parser cmd;
     cmd.add<std::string>("wav", 'w', "wav file", true, "");
     cmd.add<std::string>("model_type", 't', "tiny, base, small, turbo, large", false, "turbo");
-    cmd.add<std::string>("model_path", 'p', "model path for *.axmodel, tokens.txt, positional_embedding.bin", false, "../models-ax650");
+#if defined(CHIP_AX650)    
+    cmd.add<std::string>("model_path", 'p', "model path which contains tiny/ base/ small/ turbo/", false, "../models-ax650");
+#else
+    cmd.add<std::string>("model_path", 'p', "model path which contains tiny/ base/ small/ turbo/", false, "../models-ax630c");
+#endif
     cmd.add<std::string>("language", 0, "en, zh", false, "zh");
     cmd.parse_check(argc, argv);
 

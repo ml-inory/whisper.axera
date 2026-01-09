@@ -145,7 +145,12 @@ sudo apt install build-essential cmake
 ```
 cd cpp
 ./download_bsp.sh
-./build.sh
+
+# AX650
+./build_ax650.sh
+
+# AX630C
+./build_ax630c.sh
 ```
 
 #### 运行
