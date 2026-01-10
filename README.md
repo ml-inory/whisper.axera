@@ -16,6 +16,22 @@ OpenAI Whisper on Axera
 
 ## 模型转换
 
+目前支持的模型规模:
+ - tiny
+ - base
+ - small
+ - turbo
+
+
+目前测试过的语言:
+ - English
+ - Chinese
+ - Japanese
+ - Korean
+
+
+如需小语种或者其他大小的模型可能需要自行转换，参考  
+
 [模型转换](./model_convert/README.md)
 
 ## 上板部署
@@ -34,6 +50,9 @@ OpenAI Whisper on Axera
 
 
 <h3 id="Python">Python</h3>
+
+测试环境为Python 3.12，建议使用[Miniconda](https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh
+)，安装方法[参考](https://www.anaconda.com/docs/getting-started/miniconda/install#aws-graviton2%2Farm64)
 
 #### Requirements
 
