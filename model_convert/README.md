@@ -38,11 +38,6 @@ python export_onnx.py --model small
 - 生成适用于该模型的 PTQ 量化校准数据集
 - 使用 `Pulsar2 build` 命令集进行模型转换（PTQ 量化、编译），更详细的使用说明请参考 [AXera Pulsar2 工具链指导手册](https://pulsar2-docs.readthedocs.io/zh-cn/latest/index.html)
 
-### 下载数据集
-```
-bash download_dataset.sh
-unzip dataset.zip
-```
 
 ### 生成量化数据集
 
@@ -58,11 +53,11 @@ python generate_data.py --model tiny
 python generate_data.py --model small
 ```
 
+运行完成后会生成量化校准集和转换模型用的配置文件
+
+
 ### 模型转换
 
-#### 修改配置文件
-
-修改以 config_whisper 开头的 json 文件中的所有 calibration_dataset 字段为 **生成量化数据集** 步骤中的 `tar.gz` 文件路径
 
 #### Pulsar2 build
 
@@ -71,17 +66,11 @@ python generate_data.py --model small
 **encoder**
 
 ```
-pulsar2 build --input small/small-encoder.onnx --config config_whisper_encoder_u16.json --output_dir small_encoder --output_name small-encoder.axmodel --target_hardware AX650 --compiler.check 0
+pulsar2 build --input small-encoder.onnx --config config_whisper_small_encoder.json --output_dir small_encoder --output_name small-encoder.axmodel --target_hardware AX650 --compiler.check 0
 ```
 
-**decoder_main**
+**decoder**
 
 ```
-pulsar2 build --input small/small-decoder-main.onnx --config config_whisper_decoder_main_u16.json --output_dir small_decoder_main --output_name small-decoder-main.axmodel --target_hardware AX650 --compiler.check 0
-```
-
-**decoder_loop**
-
-```
-pulsar2 build --input small/small-decoder-loop.onnx --config config_whisper_decoder_loop_u16.json --output_dir small_decoder_loop --output_name small-decoder-loop.axmodel --target_hardware AX650 --compiler.check 0
+pulsar2 build --input small-decoder.onnx --config config_whisper_small_decoder.json --output_dir small_decoder --output_name small-decoder.axmodel --target_hardware AX650 --compiler.check 0
 ```

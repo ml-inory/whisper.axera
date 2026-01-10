@@ -1,82 +1,91 @@
 # whisper.axera
 
-OpenAI Whisper on Axera
+<div align="center">
+  <a href="README_EN.md">English</a> | <a href="README.md">中文</a>
+</div>
 
-- 目前支持 C++ 和 Python 两种语言
-- 预编译模型下载
-  - [Baidu](https://pan.baidu.com/s/1tOHVMZCin0A68T5HmKRJyg?pwd=axyz)
-  - [Huggingface](https://huggingface.co/AXERA-TECH/Whisper)
+OpenAI Whisper on Axera Platform
 
-- 如需自行转换请参考[模型转换](/model_convert/README.md)
+## Overview
 
-## 支持平台
+This project provides an optimized implementation of OpenAI's Whisper speech recognition model for Axera AI processors (AX650N/AX630C). It supports both C++ and Python interfaces for efficient on-device speech-to-text conversion.
 
-- [x] AX650N
-- [x] AX630C
+## Features
 
-## 模型转换
+- **Dual Language Support**: Both C++ and Python APIs available
+- **Multiple Model Sizes**: Support for tiny, base, small, and turbo model variants
+- **Multi-language Recognition**: Tested with English, Chinese, Japanese, and Korean
+- **Optimized Performance**: Specially optimized for Axera NPU acceleration
+- **Easy Deployment**: Pre-built packages and cross-compilation support
 
-目前支持的模型规模:
- - tiny
- - base
- - small
- - turbo
+## Supported Platforms
 
+- ✅ AX650N
+- ✅ AX630C
 
-目前测试过的语言:
- - English
- - Chinese
- - Japanese
- - Korean
+## Pre-trained Models
 
+Download pre-compiled models from:
+- [Baidu Cloud](https://pan.baidu.com/s/1tOHVMZCin0A68T5HmKRJyg?pwd=axyz)
+- [Huggingface](https://huggingface.co/AXERA-TECH/Whisper)
 
-如需小语种或者其他大小的模型可能需要自行转换，参考  
+For custom model conversion, please refer to [Model Conversion Guide](./model_convert/README_EN.md).
 
-[模型转换](./model_convert/README.md)
+## Model Conversion
 
-## 上板部署
+Currently supported model scales:
+- tiny
+- base  
+- small
+- turbo
 
-- 基于 AX650N、AX630C 的设备已预装 Ubuntu22.04
-- 链接互联网，确保设备能正常执行 `apt install`, `pip install` 等指令
-- 已验证设备：
-  - [爱芯派Pro(AX650N)](https://wiki.sipeed.com/hardware/zh/maixIV/m4ndock/m4ndock.html)
-  - [M.2 Accelerator card(AX650N)](https://axcl-docs.readthedocs.io/zh-cn/latest/doc_guide_hardware.html)
-  - [爱芯派2(AX630C)](https://axera-pi-2-docs-cn.readthedocs.io/zh-cn/latest/index.html)
-  - [Module-LLM(AX630C)](https://docs.m5stack.com/zh_CN/module/Module-LLM)
-  - [LLM630 Compute Kit(AX630C)](https://docs.m5stack.com/zh_CN/core/LLM630%20Compute%20Kit)
-- 支持编程语言:
-  - [Python](#Python)
-  - [CPP](#CPP)
+Tested languages:
+- English
+- Chinese
+- Japanese
+- Korean
 
+For other languages or custom model sizes, please refer to the [Model Conversion Guide](./model_convert/README_EN.md).
 
-<h3 id="Python">Python</h3>
+## Deployment on Target Devices
 
-测试环境为Python 3.12，建议使用[Miniconda](https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh
-)，安装方法[参考](https://www.anaconda.com/docs/getting-started/miniconda/install#aws-graviton2%2Farm64)
+### Prerequisites
+- AX650N/AX630C devices with Ubuntu 22.04 pre-installed
+- Internet connection for `apt install` and `pip install`
+- Verified hardware platforms:
+  - [MaixIV M4nDock (AX650N)](https://wiki.sipeed.com/hardware/zh/maixIV/m4ndock/m4ndock.html)
+  - [M.2 Accelerator Card (AX650N)](https://axcl-docs.readthedocs.io/zh-cn/latest/doc_guide_hardware.html)
+  - [Axera Pi 2 (AX630C)](https://axera-pi-2-docs-cn.readthedocs.io/zh-cn/latest/index.html)
+  - [Module-LLM (AX630C)](https://docs.m5stack.com/zh_CN/module/Module-LLM)
+  - [LLM630 Compute Kit (AX630C)](https://docs.m5stack.com/zh_CN/core/LLM630%20Compute%20Kit)
 
-#### Requirements
+## Programming Language Support
 
-```
+### Python
+
+Tested with Python 3.12. We recommend using [Miniconda](https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh) for environment management.
+
+#### Installation
+
+```bash
 cd python
 pip3 install -r requirements.txt
 ```
 
 ####  pyaxenigne
 
-参考 https://github.com/AXERA-TECH/pyaxengine 安装 NPU Python API
+Install NPU Python API from: https://github.com/AXERA-TECH/pyaxengine
 
-#### 运行
+#### Usage
 
-登陆开发板后
-
-##### CLI demo
+##### Command Line Interface
 
 ```
 cd python  
 python3 whisper_cli.py -t tiny --model_path ../models-ax650 -w ../demo.wav --language zh
 ```
 
-输出结果
+Example Output:  
 
 ```
 (whisper) root@ax650:/mnt/data/Github/whisper.axera/python# python whisper_cli.py -t tiny -w ../demo.wav
@@ -97,15 +106,16 @@ RTF: 0.11406774537746188
 
 ```
 
-运行参数说明:  
-| 参数名称 | 说明 | 默认值 |
+Command line arguments:
+| Argument | Description | Default |
 | --- | --- | --- |
-| --wav | 输入音频文件 | |
-| --model_type/-t | 模型类型, tiny/base/small | |
-| --model_path/-p | 模型所在目录 | ../models |
-| --language/-l | 识别语言 | zh |
+| --wav | Input audio file | - |
+| --model_type/-t | Model type: tiny/base/small | - |
+| --model_path/-p | Model directory | ../models |
+| --language/-l | Recognition language | zh |
 
-##### 服务端
+
+##### Server Mode
 
 ```
 (whisper) root@ax650:/mnt/data/Github/whisper.axera/python# python whisper_svr.py
@@ -114,7 +124,7 @@ Server started at http://0.0.0.0:8000
 
 ```
 
-测试服务端
+Test the server:
 ```
 python test_svr.py
 ```
@@ -122,20 +132,22 @@ python test_svr.py
 
 <h3 id="CPP">CPP</h3>
 
-#### 交叉编译
+#### Cross-compilation (on PC)
 
-在 PC 上完成（已在Ubuntu22.04上测试）
+Tested on Ubuntu 22.04.
 
-安装开发环境:
+Setup Development Environment:
 ```
 sudo apt update
 sudo apt install build-essential cmake
 ```
 
-获取交叉编译工具链: [地址](https://developer.arm.com/-/media/Files/downloads/gnu-a/9.2-2019.12/binrel/gcc-arm-9.2-2019.12-x86_64-aarch64-none-linux-gnu.tar.xz)  
-将交叉编译工具链路径添加到PATH  
+Download Cross-compilation Toolchain
+Download from: [AARCH64 Toolchain](https://developer.arm.com/-/media/Files/downloads/gnu-a/9.2-2019.12/binrel/gcc-arm-9.2-2019.12-x86_64-aarch64-none-linux-gnu.tar.xz)  
 
-编译  
+Add the toolchain to your PATH.
+
+Build   
 ```
 cd cpp
 ./download_bsp.sh
@@ -147,21 +159,21 @@ cd cpp
 ./build_ax630c.sh
 ```
 
-#### 运行
+#### Usage on Target Device
 
-在 AX650N 设备上执行
+AX650N
 
 ```
 ./install/ax650/whisper_cli -w ../demo.wav
 ```
 
-或  
+or with specific parameters:  
 
 ```
 ./install/ax650/whisper_cli --model_type small --model_path ../models-ax650 -w ../demo.wav
 ```
 
-输出结果
+Example output:  
 
 ```
 root@ax650:/mnt/qtang/whisper.axera/cpp# ./install/ax650/whisper_cli --wav ../demo.wav --model_type small --model_path ../models/ --language zh
@@ -175,7 +187,7 @@ RTF: 0.1166
 
 ```
 
-### 服务端
+### Server Mode
 
 ```
 ./install/ax650/whisper_srv --model_type tiny --model_path ../models-ax650 --language zh --port 8080
@@ -190,9 +202,8 @@ language: zh
 
 ```
 
-### 客户端
+### Client test using curl:
 
-curl命令行测试:  
 ```
 ffmpeg -i demo.wav -f f32le -c:a pcm_f32le - 2>/dev/null | \
 curl -X POST 10.126.33.192:8080/asr \
@@ -200,7 +211,7 @@ curl -X POST 10.126.33.192:8080/asr \
   --data-binary @-
 ```
 
-## 模型性能
+## Performance Benchmarks
 
 ### Latency
 
@@ -233,15 +244,15 @@ Python:
 | Whisper-Small |  0.11  |        |
 | Whisper-Turbo |  0.06  |        |
 
-若要复现测试结果，请按照以下步骤:
+To reproduce WER test results:  
 
-下载数据集:
+Download dataset:  
 ```
 cd model_convert
 bash download_dataset.sh
 ```
 
-运行测试脚本:
+Run test script:  
 ```
 cd python
 conda activate whisper
@@ -272,7 +283,7 @@ C++:
 | Whisper-Turbo |  2065  |  86    |
 
 
-## 技术讨论
+## Technical Discussion
 
 - Github issues
-- QQ 群: 139953715
+- Tencent QQ Group: 139953715
