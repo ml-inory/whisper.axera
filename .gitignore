@@ -11,6 +11,7 @@ model_convert/datasets.zip
 model_convert/small
 model_convert/datasets
 model_convert/datasets
-models/
+models-ax650
+models-ax630c
 *.bias
 *.weight
