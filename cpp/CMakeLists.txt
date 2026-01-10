@@ -10,12 +10,6 @@ elseif (CMAKE_BUILD_TYPE MATCHES Release)
     set(CMAKE_CXX_FLAGS "-fvisibility=hidden -O2")
 endif()
 
-# 设置库版本
-set(AX_WHISPER_VERSION_MAJOR 1)
-set(AX_WHISPER_VERSION_MINOR 0)
-set(AX_WHISPER_VERSION_PATCH 0)
-set(AX_WHISPER_VERSION ${AX_WHISPER_VERSION_MAJOR}.${AX_WHISPER_VERSION_MINOR}.${AX_WHISPER_VERSION_PATCH})
-
 # 设置安装路径
 set(CMAKE_INSTALL_PREFIX "${CMAKE_SOURCE_DIR}/install" CACHE PATH "Installation prefix")
 set(CMAKE_INSTALL_LIBDIR "lib")
@@ -44,8 +38,6 @@ add_library(ax_whisper SHARED src/api/ax_whisper_api.cpp ${SRC})
 
 # 设置库属性
 set_target_properties(ax_whisper PROPERTIES
-    VERSION ${AX_WHISPER_VERSION}
-    SOVERSION ${AX_WHISPER_VERSION_MAJOR}
     OUTPUT_NAME "ax_whisper"
     DEBUG_POSTFIX "d"
     PUBLIC_HEADER "src/api/ax_whisper_api.h"

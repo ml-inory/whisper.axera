@@ -562,9 +562,9 @@ def main():
     encoder = AudioEncoderTensorCache(model.encoder, model.decoder)
 
     cross_k, cross_v = encoder(mel)
-    assert cross_k.shape[0] == model.dims.n_audio_layer, (
+    assert cross_k.shape[0] == model.dims.n_text_layer, (
         cross_k.shape[0],
-        model.dims.n_audio_layer,
+        model.dims.n_text_layer,
     )
 
     output_names = ["cross_k", "cross_v"]
@@ -628,6 +628,17 @@ def main():
     with open(f"{name}_config.json", "w") as f:
         json.dump(encoder_meta_data, f, indent=4)
 
+    if "large" in args.model or "turbo" in args.model:
+        encoder_external_filename = encoder_filename.split(".onnx")[0]
+        encoder_model = onnx.load(encoder_filename)
+        onnx.save(
+            encoder_model,
+            encoder_filename,
+            save_as_external_data=True,
+            all_tensors_to_one_file=True,
+            location=encoder_external_filename + ".weights",
+        )
+
     tokens = torch.tensor([[tokenizer.sot]], dtype=torch.int32)
     decoder = TextDecoderTensorCache(model.decoder, model.dims.n_text_ctx)
 
@@ -677,7 +688,7 @@ def main():
         **kwargs,
     )
 
-    if "large" in args.model:
+    if "large" in args.model or "turbo" in args.model:
         decoder_external_filename = decoder_filename.split(".onnx")[0]
         decoder_model = onnx.load(decoder_filename)
         onnx.save(
@@ -687,6 +698,10 @@ def main():
             all_tensors_to_one_file=True,
             location=decoder_external_filename + ".weights",
         )
+
+        os.system("rm *.weight")
+        os.system("rm *.bias")
+        os.system("rm onnx__*")
 
 
 if __name__ == "__main__":

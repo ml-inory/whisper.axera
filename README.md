@@ -95,6 +95,11 @@ Server started at http://0.0.0.0:8000
 
 ```
 
+测试服务端
+```
+python test_svr.py
+```
+
 ### 示例
 
 <h3 id="CPP">CPP</h3>
@@ -129,19 +134,19 @@ cd cpp
 在 AX650N 设备上执行
 
 ```
-./install/whisper_cli -w ../demo.wav
+./install/ax650/whisper_cli -w ../demo.wav
 ```
 
 或  
 
 ```
-./install/whisper_cli --model_type small --model_path ../models-ax650 -w ../demo.wav
+./install/ax650/whisper_cli --model_type small --model_path ../models-ax650 -w ../demo.wav
 ```
 
 输出结果
 
 ```
-root@ax650:/mnt/qtang/whisper.axera/cpp# ./install/whisper --wav ../demo.wav --model_type small --model_path ../models/ --language zh
+root@ax650:/mnt/qtang/whisper.axera/cpp# ./install/ax650/whisper_cli --wav ../demo.wav --model_type small --model_path ../models/ --language zh
 wav_file: ../demo.wav
 model_path: ../models-ax650
 model_type: tiny
@@ -155,7 +160,7 @@ RTF: 0.1166
 ### 服务端
 
 ```
-./install/whisper_srv --model_type tiny --model_path ../models-ax650 --language zh --port 8080
+./install/ax650/whisper_srv --model_type tiny --model_path ../models-ax650 --language zh --port 8080
 
 port: 8080
 model_path: ../models-ax650

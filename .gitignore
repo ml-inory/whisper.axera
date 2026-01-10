@@ -1,7 +1,9 @@
 ax650n_bsp_sdk
 ax620e_bsp_sdk
-build
-install
+build_ax650
+build_ax630c
+install_ax650
+install_ax630c
 __pycache__
 model_convert/calibrations_*
 model_convert/datasets
