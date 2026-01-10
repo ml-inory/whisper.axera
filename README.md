@@ -1,5 +1,9 @@
 # whisper.axera
 
+<div align="center">
+  <a href="README_EN.md">English</a> | <a href="README.md">中文</a>
+</div>
+
 OpenAI Whisper on Axera
 
 - 目前支持 C++ 和 Python 两种语言
