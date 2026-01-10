@@ -3,7 +3,7 @@
 ## 创建虚拟环境
 
 ```
-conda create -n whisper python=3.9
+conda create -n whisper python=3.10
 conda activate whisper
 ```
 
@@ -27,9 +27,11 @@ python export_onnx.py --model tiny
 python export_onnx.py --model small
 ```
 
-导出成功后会生成以 `tiny-*` 或 `small-*` 开头的三个模型（`xxx-encoder.onnx`, `xxx-decoder-main.onnx`, `xxx-decoder-loop.onnx`）和必要的文件
+导出成功后会生成以 `tiny-*` 或 `small-*` 开头的两个模型（`xxx-encoder.onnx`, `xxx-decoder.onnx`）和必要的文件
 
 ## 转换模型（ONNX -> Axera）
+
+依赖Pulsar2工具链，可在[Axera的HuggingFace](https://huggingface.co/AXERA-TECH/Pulsar2)获取
 
 使用模型转换工具 `Pulsar2` 将 ONNX 模型转换成适用于 Axera 的 NPU 运行的模型文件格式 `.axmodel`，通常情况下需要经过以下两个步骤：
 

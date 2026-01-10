@@ -14,29 +14,24 @@ use any T <= 30.
 """
 
 import argparse
+import inspect
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import onnx
 import torch
 import torch.nn.functional as F
-# from onnxruntime.quantization import QuantType, quantize_dynamic
-from torch import Tensor, nn
-
 import whisper
+from torch import Tensor, nn
 from whisper.model import (
     AudioEncoder,
     MultiHeadAttention,
     ResidualAttentionBlock,
     TextDecoder,
 )
-from onnx.external_data_helper import convert_model_to_external_data
 import json
 
-torch.set_num_threads(1)
-torch.set_num_interop_threads(1)
-MultiHeadAttention.use_sdpa = False
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -48,37 +43,29 @@ def get_args():
         choices=[
             "tiny", "tiny.en", "base", "base.en",
             "small", "small.en", "medium", "medium.en",
-            "large", "large-v1", "large-v2", "large-v3",
+            "large-v1", "large-v2",
+            "large", "large-v3", "turbo", # these three have feature dim 128
             "distil-medium.en", "distil-small.en", "distil-large-v2",
-            # "distil-large-v3", # distil-large-v3 is not supported!
+            "distil-large-v3",
+            "distil-large-v3.5",
             # for fine-tuned models from icefall
-            "medium-aishell", "turbo"
+            "medium-aishell",
             ],
         # fmt: on
     )
     return parser.parse_args()
 
 
-def save_large_model(filename: str):
-    model = onnx.load(filename)
-    if "large" in filename or "turbo" in filename:
-        external_filename = os.path.basename(filename).split(".onnx")[0]
-        convert_model_to_external_data(
-            model,
-            all_tensors_to_one_file=True,  
-            location=f"./{external_filename}.data",          
-            size_threshold=0,              
-            convert_attribute=False        
-        )
-
-        onnx.save_model(
-            model,
-            os.path.join(os.path.dirname(filename), "..", os.path.basename(filename)),
-            save_as_external_data=True,
-            all_tensors_to_one_file=True,
-            location=f"./{external_filename}.data",
-            size_threshold=0,
-        )
+def causal_mask_1d(n: int, L: int, device=None, dtype=torch.int32):
+    """
+    Returns a 1-D int mask of shape (L,) with:
+      0 -> allowed
+      1 -> masked (will be converted to -inf later)
+    """
+    mask = torch.ones((L,), device=device, dtype=dtype)
+    if n > 0:
+        mask[:n] = 0
+    return mask
 
 
 def add_meta_data(filename: str, meta_data: Dict[str, Any]):
@@ -101,25 +88,66 @@ def add_meta_data(filename: str, meta_data: Dict[str, Any]):
         meta.value = str(value)
 
     if "large" in filename or "turbo" in filename:
-        external_filename = os.path.basename(filename).split(".onnx")[0]
-        convert_model_to_external_data(
-            model,
-            all_tensors_to_one_file=True,  
-            location=f"./{external_filename}.data",          
-            size_threshold=0,              
-            convert_attribute=False        
-        )
-
+        external_filename = filename.split(".onnx")[0]
         onnx.save(
             model,
-            os.path.join(os.path.dirname(filename), "..", os.path.basename(filename)),
+            filename,
             save_as_external_data=True,
             all_tensors_to_one_file=True,
-            location=f"./{external_filename}.data",
-            size_threshold=0,
+            location=external_filename + ".weights",
         )
     else:
         onnx.save(model, filename)
+
+
+def modified_self_qkv_attention(
+    self,
+    q: Tensor,
+    k_cache: Tensor,
+    v_cache: Tensor,
+    k1: Tensor,
+    v1: Tensor,
+    mask: Tensor,
+) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+    assert mask is not None
+
+    n_batch, n_ctx, n_state = q.shape
+
+    scale = (n_state // self.n_head) ** -0.25
+    q = q.view(*q.shape[:2], self.n_head, -1).permute(0, 2, 1, 3)
+    k_cache = k_cache.view(*k_cache.shape[:2], self.n_head, -1).permute(0, 2, 1, 3)
+    v_cache = v_cache.view(*v_cache.shape[:2], self.n_head, -1).permute(0, 2, 1, 3)
+
+    k1 = k1.view(*k1.shape[:2], self.n_head, -1).permute(0, 2, 1, 3)
+    v1 = v1.view(*v1.shape[:2], self.n_head, -1).permute(0, 2, 1, 3)
+
+    qk = (q * scale) @ (k_cache * scale).transpose(-1, -2)  # (1, 6, 1, 448)
+
+    qk1 = (q * scale) @ (k1 * scale).transpose(-1, -2)  # (1, 6, 1, 1)
+
+    #  qk = qk + mask
+    #  qk.masked_fill_(mask.to(torch.bool), float("-inf"))
+    qk.masked_fill_(mask.to(torch.bool), -60000)
+
+    qk = qk.float()
+    qk1 = qk1.float()
+
+    qk_total = torch.cat([qk, qk1], dim=-1)
+
+    w_total = F.softmax(qk_total, dim=-1).to(q.dtype)
+    w = w_total[:, :, :, :-1]
+    w1 = w_total[:, :, :, -1:]
+
+    out = (w @ v_cache).permute(0, 2, 1, 3).flatten(start_dim=2)
+    out1 = (w1 @ v1).permute(0, 2, 1, 3).flatten(start_dim=2)
+    out = out + out1
+
+    qk = qk.detach()
+
+    return out, qk
+
+
+MultiHeadAttention.qkv_attention_self = modified_self_qkv_attention
 
 
 def modified_audio_encoder_forward(self: AudioEncoder, x: torch.Tensor):
@@ -136,6 +164,7 @@ def modified_audio_encoder_forward(self: AudioEncoder, x: torch.Tensor):
         assert x.shape[1:] == self.positional_embedding.shape, "incorrect audio shape"
         x = (x + self.positional_embedding).to(x.dtype)
     else:
+        #  print(x.shape, self.positional_embedding.shape)
         # This branch contains the actual changes
         assert (
             x.shape[2] == self.positional_embedding.shape[1]
@@ -161,24 +190,33 @@ class AudioEncoderTensorCache(nn.Module):
         self.audioEncoder = inAudioEncoder
         self.textDecoder = inTextDecoder
 
-    def forward(self, x: Tensor):
+    def forward(self, x: Tensor) -> List[Tuple[Tensor, Tensor]]:
+        """
+        Args:
+          x: (1, 80, 3000)
+          cross_kv_pair:
+            - the i-th entry contains kv cache for the i-th layer
+        """
         audio_features = self.audioEncoder(x)
 
         n_layer_cross_k_list = []
         n_layer_cross_v_list = []
-        for block in self.textDecoder.blocks:
-            n_layer_cross_k_list.append(block.cross_attn.key(audio_features))
-            n_layer_cross_v_list.append(block.cross_attn.value(audio_features))
 
-        return torch.stack(n_layer_cross_k_list), torch.stack(n_layer_cross_v_list)
+        for block in self.textDecoder.blocks:
+            k = block.cross_attn.key(audio_features)  # (batch_size, 1500, 384)
+            v = block.cross_attn.value(audio_features)  # (batch_size, 1500, 384)
+
+            n_layer_cross_k_list.append(k)
+            n_layer_cross_v_list.append(v)
+
+        return torch.stack(n_layer_cross_k_list, dim=0), \
+            torch.stack(n_layer_cross_v_list, dim=0)
 
 
 class MultiHeadAttentionCross(nn.Module):
     def __init__(self, inMultiHeadAttention: MultiHeadAttention):
         super().__init__()
         self.multiHeadAttention = inMultiHeadAttention
-        if getattr(self.multiHeadAttention, "use_sdpa") is not None:
-            self.multiHeadAttention.use_sdpa = False
 
     def forward(
         self,
@@ -193,65 +231,46 @@ class MultiHeadAttentionCross(nn.Module):
 
 
 class MultiHeadAttentionSelf(nn.Module):
-    def __init__(self, inMultiHeadAttention: MultiHeadAttention, loop: bool):
+    def __init__(self, inMultiHeadAttention: MultiHeadAttention):
         super().__init__()
         self.multiHeadAttention = inMultiHeadAttention
-        self.loop = loop
 
     def forward(
         self,
-        x: Tensor,  # (b, n_ctx      , n_state)
-        k_cache: Tensor,  # (b, n_ctx_cache, n_state)
-        v_cache: Tensor,  # (b, n_ctx_cache, n_state)
-        mask: Tensor,
+        x: Tensor,  # (1, 1      , 384)
+        k_cache: Tensor,  # (1, 448, 384)
+        v_cache: Tensor,  # (1, 448, 384)
+        mask: Tensor,  # (448,)
     ):
-        q = self.multiHeadAttention.query(x)  # (b, n_ctx, n_state)
-        k = self.multiHeadAttention.key(x)  # (b, n_ctx, n_state)
-        v = self.multiHeadAttention.value(x)  # (b, n_ctx, n_state)
+        q = self.multiHeadAttention.query(x)  # (1, 1, 384)
+        k = self.multiHeadAttention.key(x)  # (1, 1, 384)
+        v = self.multiHeadAttention.value(x)  # (1, 1, 384)
 
-        # k_cache[:, -k.shape[1] :, :] = k  # (b, n_ctx_cache + n_ctx, n_state)
-        # v_cache[:, -v.shape[1] :, :] = v  # (b, n_ctx_cache + n_ctx, n_state)
-        if self.loop:
-            k_cache = torch.cat((k_cache[:, 1:, :], k), 1)
-            v_cache = torch.cat((v_cache[:, 1:, :], v), 1)
-            
-            wv, qk = self.qkv_attention(q, k_cache, v_cache, mask)
-        else:
-            k_cache = k
-            v_cache = v
+        #  k_cache[:, offset : offset + 1, :] = k  # (b, n_ctx_cache + n_ctx, n_state)
+        #  v_cache[:, offset : offset + 1, :] = v  # (b, n_ctx_cache + n_ctx, n_state)
 
-            wv, qk = self.multiHeadAttention.qkv_attention(q, k_cache, v_cache, mask)
-        return self.multiHeadAttention.out(wv), k_cache, v_cache
+        wv, qk = self.multiHeadAttention.qkv_attention_self(
+            q,
+            k_cache=k_cache,
+            v_cache=v_cache,
+            k1=k,
+            v1=v,
+            mask=mask,
+        )
 
-    def qkv_attention(
-                self, q: Tensor, k: Tensor, v: Tensor, mask: Optional[Tensor] = None
-            ):
-                n_batch, n_ctx, n_state = q.shape
-                scale = (n_state // self.multiHeadAttention.n_head) ** -0.25
-                q = q.view(*q.shape[:2], self.multiHeadAttention.n_head, -1).permute(0, 2, 1, 3) * scale
-                k = k.view(*k.shape[:2], self.multiHeadAttention.n_head, -1).permute(0, 2, 3, 1) * scale
-                v = v.view(*v.shape[:2], self.multiHeadAttention.n_head, -1).permute(0, 2, 1, 3)
-
-                qk = q @ k
-                if mask is not None:
-                    qk = qk + mask
-                qk = qk.float()
-
-                w = F.softmax(qk, dim=-1).to(q.dtype)
-                return (w @ v).permute(0, 2, 1, 3).flatten(start_dim=2), qk.detach()
+        return self.multiHeadAttention.out(wv), k, v
 
 
 class ResidualAttentionBlockTensorCache(nn.Module):
-    def __init__(self, inResidualAttentionBlock: ResidualAttentionBlock, loop: bool):
+    def __init__(self, inResidualAttentionBlock: ResidualAttentionBlock):
         super().__init__()
         self.originalBlock = inResidualAttentionBlock
-        self.attn = MultiHeadAttentionSelf(inResidualAttentionBlock.attn, loop=loop)
+        self.attn = MultiHeadAttentionSelf(inResidualAttentionBlock.attn)
         self.cross_attn = (
             MultiHeadAttentionCross(inResidualAttentionBlock.cross_attn)
             if inResidualAttentionBlock.cross_attn
             else None
         )
-        self.loop = loop
 
     def forward(
         self,
@@ -260,10 +279,14 @@ class ResidualAttentionBlockTensorCache(nn.Module):
         self_v_cache: Tensor,
         cross_k: Tensor,
         cross_v: Tensor,
+        offset: Tensor,
         mask: Tensor,
     ):
-        self_attn_x, self_k_cache_updated, self_v_cache_updated = self.attn(
-            self.originalBlock.attn_ln(x), self_k_cache, self_v_cache, mask=mask
+        self_attn_x, self_k, self_v = self.attn(
+            self.originalBlock.attn_ln(x),
+            self_k_cache,
+            self_v_cache,
+            mask=mask,
         )
         x = x + self_attn_x
 
@@ -273,74 +296,71 @@ class ResidualAttentionBlockTensorCache(nn.Module):
             )
 
         x = x + self.originalBlock.mlp(self.originalBlock.mlp_ln(x))
-        return x, self_k_cache_updated, self_v_cache_updated
+        return x, self_k, self_v
 
 
 class TextDecoderTensorCache(nn.Module):
-    def __init__(self, inTextDecoder: TextDecoder, in_n_ctx: int, loop: bool):
+    def __init__(self, inTextDecoder: TextDecoder, in_n_ctx: int):
         super().__init__()
         self.textDecoder = inTextDecoder
         self.n_ctx = in_n_ctx
-        self.loop = loop # True: loop; False: main
 
         self.blocks = []
         for orginal_block in self.textDecoder.blocks:
-            self.blocks.append(ResidualAttentionBlockTensorCache(orginal_block, self.loop))
+            self.blocks.append(ResidualAttentionBlockTensorCache(orginal_block))
 
     def forward(
         self,
         tokens: Tensor,
-        n_layer_self_k_cache: Tensor,
-        n_layer_self_v_cache: Tensor,
-        n_layer_cross_k: Tensor,
-        n_layer_cross_v: Tensor,
-        positional_embedding: Tensor,
+        self_k: Tensor,
+        self_v: Tensor,
+        cross_k: Tensor,
+        cross_v: Tensor,
+        offset: Tensor,
         mask: Tensor,
-    ):
-        
-        
-        if self.loop:
-            x = self.textDecoder.token_embedding(tokens) + positional_embedding
-        else:
-            x = (
-                self.textDecoder.token_embedding(tokens)
-                + self.textDecoder.positional_embedding[: tokens.shape[-1]]
-            )
-        x = x.to(n_layer_cross_k[0].dtype)
+    ) -> Tuple[Tensor, List[Tuple[Tensor, Tensor]]]:
+        """
+        tokens: (batch_size, 1)
+        self_kv_pair:
+            - [i][0]: layer_i_self_k_cache, (batch_size, 448, dim)
+            - [i][1]: layer_i_self_v_cache, (batch_size, 448, dim)
+        self_k self_v: (n_text_layer, batch_size, n_text_ctx, n_text_state)
+        cross_k cross_v: (n_audio_layer, batch_size, n_audio_ctx, n_audio_state)
+        Returns:
+          - logits
+          - this_self_kv_pair
+        """
+        assert tokens.shape == (1, 1), tokens.shape
+        x = self.textDecoder.token_embedding(
+            tokens
+        ) + self.textDecoder.positional_embedding[offset.to(torch.int64)].unsqueeze(0)
 
         i = 0
-        self_k_cache_out = []
-        self_v_cache_out = []
+        this_self_k = []
+        this_self_v = []
         for block in self.blocks:
-            self_k_cache = n_layer_self_k_cache[i, :, :, :]
-            self_v_cache = n_layer_self_v_cache[i, :, :, :]
-            if self.loop:
-                x, self_k_cache, self_v_cache = block(
-                    x,
-                    self_k_cache=self_k_cache,
-                    self_v_cache=self_v_cache,
-                    cross_k=n_layer_cross_k[i],
-                    cross_v=n_layer_cross_v[i],
-                    mask=mask,
-                )
-                self_k_cache_out.append(self_k_cache.unsqueeze(0))
-                self_v_cache_out.append(self_v_cache.unsqueeze(0))
-            else:
-                n_audio, n_text_ctx, ntext_state = self_k_cache.shape
+            self_k_cache = self_k[i]
+            self_v_cache = self_v[i]
 
-                x, self_k_cache, self_v_cache = block(
-                    x,
-                    self_k_cache=self_k_cache,
-                    self_v_cache=self_v_cache,
-                    cross_k=n_layer_cross_k[i],
-                    cross_v=n_layer_cross_v[i],
-                    mask=self.textDecoder.mask,
-                )
-                self_k_cache_out.append(torch.cat((torch.zeros([n_audio, n_text_ctx - self_k_cache.shape[1], ntext_state]).to(self_k_cache.device), self_k_cache), 1).unsqueeze(0))
-                self_v_cache_out.append(torch.cat((torch.zeros([n_audio, n_text_ctx - self_v_cache.shape[1], ntext_state]).to(self_v_cache.device), self_v_cache), 1).unsqueeze(0))
+            x, update_self_k, update_self_v = block(
+                x,
+                #  self_k_cache=self_k_cache[:, : offset + 1],
+                #  self_v_cache=self_v_cache[:, : offset + 1],
+                self_k_cache=self_k_cache,
+                self_v_cache=self_v_cache,
+                cross_k=cross_k[i],
+                cross_v=cross_v[i],
+                offset=offset,
+                #  mask=self.textDecoder.mask,
+                mask=mask,
+            )
+            #  self_k_cache[:, : offset + 1] = updated_self_k_cache
+            #  self_v_cache[:, : offset + 1] = updated_self_v_cache
+            #  updated_self_kv_pair.append((self_k_cache, self_v_cache))
+            this_self_k.append(update_self_k)
+            this_self_v.append(update_self_v)
+ 
             i += 1
-        n_layer_self_k_cache = torch.cat(self_k_cache_out, 0)
-        n_layer_self_v_cache = torch.cat(self_v_cache_out, 0)
 
         x = self.textDecoder.ln(x)
 
@@ -364,7 +384,7 @@ class TextDecoderTensorCache(nn.Module):
                 .float()
             )
 
-        return logits, n_layer_self_k_cache, n_layer_self_v_cache
+        return logits, torch.stack(this_self_k, dim=0), torch.stack(this_self_v, dim=0)
 
 
 # ref: https://github.com/ggerganov/whisper.cpp/blob/master/models/convert-pt-to-ggml.py#L232
@@ -392,7 +412,7 @@ def convert_tokens(name, model):
             for token, rank in (line.split() for line in contents.splitlines() if line)
         }
 
-    with open(f"{name}/{name}-tokens.txt", "w") as f:
+    with open(f"{name}-tokens.txt", "w") as f:
         for t, i in tokens.items():
             f.write(f"{t} {i}\n")
 
@@ -406,21 +426,97 @@ def main():
 
     opset_version = 17
 
-    model = whisper.load_model(name)
-    print(model.dims)
-    os.makedirs(name, exist_ok=True)
+    if name == "distil-medium.en":
+        filename = "./distil-medium-en-original-model.bin"
+        if not Path(filename).is_file():
+            raise ValueError(
+                """
+                Please go to https://huggingface.co/distil-whisper/distil-medium.en
+                to download original-model.bin
+                You can use the following command to do that:
 
+                wget -O distil-medium-en-original-model.bin https://huggingface.co/distil-whisper/distil-medium.en/resolve/main/original-model.bin
+            """
+            )
+        model = whisper.load_model(filename)
+    elif name == "distil-large-v2":
+        filename = "./distil-large-v2-original-model.bin"
+        if not Path(filename).is_file():
+            raise ValueError(
+                """
+                Please go to https://huggingface.co/distil-whisper/distil-large-v2
+                to download original-model.bin
+                You can use the following command to do that:
+
+                wget -O distil-large-v2-original-model.bin https://huggingface.co/distil-whisper/distil-large-v2/resolve/main/original-model.bin
+            """
+            )
+        model = whisper.load_model(filename)
+    elif name == "distil-large-v3":
+        filename = "./distil-large-v3-original-model.bin"
+        if not Path(filename).is_file():
+            raise ValueError(
+                """
+                Please go to https://huggingface.co/distil-whisper/distil-large-v3-openai
+                to download model.bin
+                You can use the following command to do that:
+
+                wget -O distil-large-v3-original-model.bin https://huggingface.co/distil-whisper/distil-large-v3-openai/resolve/main/model.bin
+            """
+            )
+        model = whisper.load_model(filename)
+    elif name == "distil-large-v3.5":
+        filename = "./distil-large-v3.5-original-model.bin"
+        if not Path(filename).is_file():
+            raise ValueError(
+                """
+                Please go to https://huggingface.co/distil-whisper/distil-large-v3.5-openai/
+                to download model.bin
+                You can use the following command to do that:
+
+                wget -O distil-large-v3.5-original-model.bin https://huggingface.co/distil-whisper/distil-large-v3.5-openai/resolve/main/model.bin
+            """
+            )
+        model = whisper.load_model(filename)
+    elif name == "distil-small.en":
+        filename = "./distil-small-en-original-model.bin"
+        if not Path(filename).is_file():
+            raise ValueError(
+                """
+                Please go to https://huggingface.co/distil-whisper/distil-small.en
+                to download original-model.bin
+                You can use the following command to do that:
+
+                wget -O distil-small-en-original-model.bin https://huggingface.co/distil-whisper/distil-small.en/resolve/main/original-model.bin
+            """
+            )
+        model = whisper.load_model(filename)
+    elif name == "medium-aishell":
+        filename = "./medium-aishell.pt"
+        if not Path(filename).is_file():
+            raise ValueError(
+                """
+                Please go to https://huggingface.co/yuekai/icefall_asr_aishell_whisper/tree/main/exp_medium
+                to download whisper-medium-aishell1-epoch-10-avg-4.pt
+                You can use the following command to do that:
+
+                wget -O medium-aishell.pt https://huggingface.co/yuekai/icefall_asr_aishell_whisper/resolve/main/exp_medium/whisper-medium-aishell1-epoch-10-avg-4.pt
+            """
+            )
+        model = whisper.load_model(filename)
+    else:
+        model = whisper.load_model(name)
+    model.to("cpu")
+
+    num_params = sum(p.numel() for p in model.parameters())
+    num_encoder_params = sum(p.numel() for p in model.encoder.parameters())
+    num_decoder_params = sum(p.numel() for p in model.decoder.parameters())
+    print(f"{name} model parameters: {num_params} (or {num_params/1000/1000} M)")
     print(
-        f"number of model parameters: {name}",
-        sum(p.numel() for p in model.parameters()),
+        f"{name} encoder parameters: {num_encoder_params} (or {num_encoder_params/1000/1000} M)"
     )
     print(
-        f"number of encoder parameters: {name}",
-        sum(p.numel() for p in model.encoder.parameters()),
-    )
-    print(
-        f"number of decoder parameters: {name}",
-        sum(p.numel() for p in model.decoder.parameters()),
+        f"{name} decoder parameters: {num_decoder_params} (or {num_decoder_params/1000/1000} M)"
     )
 
     convert_tokens(name=name, model=model)
@@ -430,6 +526,15 @@ def main():
     tokenizer = whisper.tokenizer.get_tokenizer(
         model.is_multilingual, num_languages=model.num_languages
     )
+    # tiny: <|startoftranscript|><|en|><|transcribe|> (50258, 50259, 50359)
+    # base: <|startoftranscript|><|en|><|transcribe|> (50258, 50259, 50359)
+    # tiny.en: <|startoftranscript|> (50257,)
+    print(tokenizer.decode(tokenizer.sot_sequence), tokenizer.sot_sequence)
+
+    # tiny: <|notimestamps|> 50363
+    # base: <|notimestamps|> 50363
+    # tiny.en: <|notimestamps|> 50362
+    print(tokenizer.decode([tokenizer.no_timestamps]), tokenizer.no_timestamps)
 
     model.eval()
     print(model.dims)
@@ -437,11 +542,17 @@ def main():
     audio = whisper.pad_or_trim(audio)
     assert audio.shape == (16000 * 30,), audio.shape
 
-    # if args.model in ("large", "large-v3", "turbo"):
-    #     n_mels = 128
-    # else:
-    #     n_mels = 80
-    n_mels=model.dims.n_mels
+    if args.model in ("distil-large-v3", "distil-large-v3.5"):
+        n_mels = 128
+    elif args.model in (
+        "large",
+        "large-v3",
+        "turbo",
+    ):
+        n_mels = 128
+    else:
+        n_mels = 80
+
     mel = (
         whisper.log_mel_spectrogram(audio, n_mels=n_mels).to(model.device).unsqueeze(0)
     )
@@ -450,46 +561,39 @@ def main():
 
     encoder = AudioEncoderTensorCache(model.encoder, model.decoder)
 
-    n_layer_cross_k, n_layer_cross_v = encoder(mel)
-    assert n_layer_cross_k.shape == (
+    cross_k, cross_v = encoder(mel)
+    assert cross_k.shape[0] == model.dims.n_text_layer, (
+        cross_k.shape[0],
         model.dims.n_text_layer,
-        batch_size,
-        model.dims.n_audio_ctx,
-        model.dims.n_text_state,
-    ), (n_layer_cross_k.shape, model.dims)
-    assert n_layer_cross_v.shape == (
-        model.dims.n_text_layer,
-        batch_size,
-        model.dims.n_audio_ctx,
-        model.dims.n_text_state,
-    ), (n_layer_cross_v.shape, model.dims)
+    )
 
-    if "large" in name or "turbo" in name:
-        os.makedirs(f"{name}/{name}-encoder", exist_ok=True)
-        encoder_filename = f"{name}/{name}-encoder/{name}-encoder.onnx"
-    else:
-        encoder_filename = f"{name}/{name}-encoder.onnx"
+    output_names = ["cross_k", "cross_v"]
+
+    export_sig = inspect.signature(torch.onnx.export)
+
+    kwargs = dict()
+    if "dynamo" in export_sig.parameters:
+        kwargs["dynamo"] = False
+
+    if "external_data" in export_sig.parameters:
+        kwargs["external_data"] = False
+
+    encoder_filename = f"{name}-encoder.onnx"
     torch.onnx.export(
         encoder,
         mel,
         encoder_filename,
         opset_version=opset_version,
-        export_params=True,
-        do_constant_folding=True,
         input_names=["mel"],
-        output_names=["n_layer_cross_k", "n_layer_cross_v"],
-        # dynamic_axes={
-        #     "mel": {0: "n_audio", 2: "T"},  # n_audio is also known as batch_size
-        #     "n_layer_cross_k": {1: "n_audio", 2: "T"},
-        #     "n_layer_cross_v": {1: "n_audio", 2: "T"},
-        # },
+        output_names=output_names,
+        **kwargs,
     )
 
     encoder_meta_data = {
         "model_type": f"whisper-{name}",
         "version": "1",
         "maintainer": "k2-fsa",
-        "n_mels": n_mels,
+        "n_mels": model.dims.n_mels,
         "n_audio_ctx": model.dims.n_audio_ctx,
         "n_audio_state": model.dims.n_audio_state,
         "n_audio_head": model.dims.n_audio_head,
@@ -500,12 +604,12 @@ def main():
         "n_text_head": model.dims.n_text_head,
         "n_text_layer": model.dims.n_text_layer,
         "sot_sequence": ",".join(list(map(str, tokenizer.sot_sequence))),
-        "all_language_tokens": ",".join(
-            list(map(str, tokenizer.all_language_tokens))
-        ),  # a list of ids
-        "all_language_codes": ",".join(
-            tokenizer.all_language_codes
-        ),  # e.g., en, de, zh, fr
+         "all_language_tokens": ",".join(
+             list(map(str, tokenizer.all_language_tokens))
+         ),  # a list of ids
+         "all_language_codes": ",".join(
+             tokenizer.all_language_codes
+         ),  # e.g., en, de, zh, fr
         "sot": tokenizer.sot,
         "sot_index": tokenizer.sot_sequence.index(tokenizer.sot),
         "eot": tokenizer.eot,
@@ -521,177 +625,101 @@ def main():
     }
     print(f"encoder_meta_data: {encoder_meta_data}")
     add_meta_data(filename=encoder_filename, meta_data=encoder_meta_data)
-    with open(f"{name}/{name}_config.json", "w") as f:
+    with open(f"{name}_config.json", "w") as f:
         json.dump(encoder_meta_data, f, indent=4)
 
-    # save_large_model(encoder_filename)
+    if "large" in args.model or "turbo" in args.model:
+        encoder_external_filename = encoder_filename.split(".onnx")[0]
+        encoder_model = onnx.load(encoder_filename)
+        onnx.save(
+            encoder_model,
+            encoder_filename,
+            save_as_external_data=True,
+            all_tensors_to_one_file=True,
+            location=encoder_external_filename + ".weights",
+        )
 
-    n_audio = mel.shape[0]
-    tokens = torch.tensor([[tokenizer.sot, tokenizer.sot, tokenizer.sot, tokenizer.sot]] * n_audio).to(
-        mel.device
-    )  # [n_audio, 4]
-    decoder = TextDecoderTensorCache(model.decoder, model.dims.n_text_ctx, loop=False)
-    n_layer_self_k_cache = torch.zeros(
-        (
-            len(model.decoder.blocks),
-            n_audio,
-            model.dims.n_text_ctx,
-            model.dims.n_text_state,
-        ),
-        device=mel.device,
-    )
-    n_layer_self_v_cache = torch.zeros(
-        (
-            len(model.decoder.blocks),
-            n_audio,
-            model.dims.n_text_ctx,
-            model.dims.n_text_state,
-        ),
-        device=mel.device,
-    )
-    offset = torch.zeros(1, dtype=torch.int64).to(mel.device)
-    positional_embedding = None
-    mask = None
+    tokens = torch.tensor([[tokenizer.sot]], dtype=torch.int32)
+    decoder = TextDecoderTensorCache(model.decoder, model.dims.n_text_ctx)
 
-    if "large" in name or "turbo" in name:
-        os.makedirs(f"{name}/{name}-decoder-main", exist_ok=True)
-        decoder_filename = f"{name}/{name}-decoder-main/{name}-decoder-main.onnx"
-    else:
-        decoder_filename = f"{name}/{name}-decoder-main.onnx"
+    batch_size = 1
+    self_k = torch.zeros(model.dims.n_text_layer, batch_size, model.dims.n_text_ctx, model.dims.n_text_state)
+    self_v = torch.zeros(model.dims.n_text_layer, batch_size, model.dims.n_text_ctx, model.dims.n_text_state)
+
+    offset = torch.zeros(1, dtype=torch.int32)
+    mask = causal_mask_1d(offset.item(), model.dims.n_text_ctx)
+
+    logits, this_self_k, this_self_v = decoder(
+        tokens,
+        self_k,
+        self_v,
+        cross_k,
+        cross_v,
+        offset,
+        mask,
+    )
+
+    assert logits.shape == (batch_size, tokens.shape[1], model.dims.n_vocab)
+    assert self_k.shape[0] == model.dims.n_text_layer, (
+        self_k.shape[0] ,
+        model.dims.n_text_layer,
+    )
+
+    input_names = [f"tokens", "self_k", "self_v", "cross_k", "cross_v", "offset", "mask"]
+
+    output_names = [f"logits", "this_self_k", "this_self_v"]
+
+    decoder_filename = f"{name}-decoder.onnx"
     torch.onnx.export(
         decoder,
         (
             tokens,
-            n_layer_self_k_cache,
-            n_layer_self_v_cache,
-            n_layer_cross_k,
-            n_layer_cross_v,
-            positional_embedding,
+            self_k,
+            self_v,
+            cross_k,
+            cross_v,
+            offset,
             mask,
         ),
         decoder_filename,
         opset_version=opset_version,
-        export_params=True,
-        do_constant_folding=True,
-        input_names=[
-            "tokens",
-            "in_n_layer_self_k_cache",
-            "in_n_layer_self_v_cache",
-            "n_layer_cross_k",
-            "n_layer_cross_v",
-            "positional_embedding",
-            "mask",
-        ],
-        output_names=["logits", "out_n_layer_self_k_cache", "out_n_layer_self_v_cache"],
-        # dynamic_axes={
-        #     "tokens": {0: "n_audio", 1: "n_tokens"},
-        #     "in_n_layer_self_k_cache": {1: "n_audio"},
-        #     "in_n_layer_self_v_cache": {1: "n_audio"},
-        #     "n_layer_cross_k": {1: "n_audio", 2: "T"},
-        #     "n_layer_cross_v": {1: "n_audio", 2: "T"},
-        # },
-    )
-    save_large_model(decoder_filename)
-
-    logits, n_layer_self_k_cache, n_layer_self_v_cache = decoder(
-        tokens,
-        n_layer_self_k_cache,
-        n_layer_self_v_cache,
-        n_layer_cross_k,
-        n_layer_cross_v,
-        positional_embedding,
-        mask,
-    )
-    assert logits.shape == (n_audio, tokens.shape[1], model.dims.n_vocab)
-    assert n_layer_self_k_cache.shape == (
-        model.dims.n_text_layer,
-        n_audio,
-        model.dims.n_text_ctx,
-        model.dims.n_text_state,
-    )
-    assert n_layer_self_v_cache.shape == (
-        model.dims.n_text_layer,
-        n_audio,
-        model.dims.n_text_ctx,
-        model.dims.n_text_state,
+        input_names=input_names,
+        output_names=output_names,
+        **kwargs,
     )
 
-    decoder = TextDecoderTensorCache(model.decoder, model.dims.n_text_ctx, loop=True)
-    offset = torch.tensor([tokens.shape[1]], dtype=torch.int64).to(mel.device)
-    tokens = torch.tensor([[tokenizer.sot]] * n_audio).to(mel.device)  # [n_audio, 1]
-    positional_embedding = decoder.textDecoder.positional_embedding[offset[0] : offset[0] + tokens.shape[-1]]
-    mask = torch.zeros([model.dims.n_text_ctx]).to(mel.device)
-    mask[:model.dims.n_text_ctx - offset[0]] = -torch.inf
+    if "large" in args.model or "turbo" in args.model:
+        decoder_external_filename = decoder_filename.split(".onnx")[0]
+        decoder_model = onnx.load(decoder_filename)
+        onnx.save(
+            decoder_model,
+            decoder_filename,
+            save_as_external_data=True,
+            all_tensors_to_one_file=True,
+            location=decoder_external_filename + ".weights",
+        )
 
-    logits, out_n_layer_self_k_cache, out_n_layer_self_v_cache = decoder(
-        tokens,
-        n_layer_self_k_cache,
-        n_layer_self_v_cache,
-        n_layer_cross_k,
-        n_layer_cross_v,
-        positional_embedding,
-        mask,
-    )
+        os.system("rm *.weight")
+        os.system("rm *.bias")
+        os.system("rm onnx__*")
 
-    if "large" in name or "turbo" in name:
-        os.makedirs(f"{name}/{name}-decoder-loop", exist_ok=True)
-        decoder_filename = f"{name}/{name}-decoder-loop/{name}-decoder-loop.onnx"
-    else:
-        decoder_filename = f"{name}/{name}-decoder-loop.onnx"
-    torch.onnx.export(
-        decoder,
-        (
-            tokens,
-            n_layer_self_k_cache,
-            n_layer_self_v_cache,
-            n_layer_cross_k,
-            n_layer_cross_v,
-            positional_embedding,
-            mask,
-        ),
-        decoder_filename,
-        opset_version=opset_version,
-        export_params=True,
-        do_constant_folding=True,
-        input_names=[
-            "tokens",
-            "in_n_layer_self_k_cache",
-            "in_n_layer_self_v_cache",
-            "n_layer_cross_k",
-            "n_layer_cross_v",
-            "positional_embedding",
-            "mask",
-        ],
-        output_names=["logits", "out_n_layer_self_k_cache", "out_n_layer_self_v_cache"],
-        # dynamic_axes={
-        #     "tokens": {0: "n_audio", 1: "n_tokens"},
-        #     "in_n_layer_self_k_cache": {1: "n_audio"},
-        #     "in_n_layer_self_v_cache": {1: "n_audio"},
-        #     "n_layer_cross_k": {1: "n_audio", 2: "T"},
-        #     "n_layer_cross_v": {1: "n_audio", 2: "T"},
-        # },
-    )
-    save_large_model(decoder_filename)
-
-    embed_filename = f"{name}/{name}-positional-embedding.npy"
-    import numpy as np
-    pe = decoder.textDecoder.positional_embedding.cpu().numpy()
-    np.save(embed_filename, pe)
-    pe.flatten().tofile(f"{name}/{name}-positional_embedding.bin")
-
-    # if "large" in args.model:
-    #     decoder_external_filename = decoder_filename.split(".onnx")[0]
-    #     decoder_model = onnx.load(decoder_filename)
-    #     onnx.save(
-    #         decoder_model,
-    #         decoder_filename,
-    #         save_as_external_data=True,
-    #         all_tensors_to_one_file=True,
-    #         location=decoder_external_filename + ".weights",
-    #     )
 
 if __name__ == "__main__":
-    main()
+    torch.set_num_threads(1)
+    torch.set_num_interop_threads(1)
+    try:
+        # To fix
+        # TypeError: scaled_dot_product_attention(): argument 'is_causal' must be bool, not Tensor
+        # See also https://github.com/k2-fsa/sherpa-onnx/issues/1764
+        from whisper.model import disable_sdpa
+
+        with disable_sdpa():
+            main()
+    except:
+        main()
+
+
 '''
-python3 export_onnx.py --model small
+Usage:
+python3 ./export_onnx.py --model tiny
 '''

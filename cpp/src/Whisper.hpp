@@ -1,9 +1,8 @@
 #pragma once
 
-#include "Encoder.hpp"
-#include "DecoderMain.hpp"
-#include "DecoderLoop.hpp"
+// #include "EngineWrapper.hpp"
 #include "utils/nlohmann/json.hpp"
+#include "ax_model_runner/ax_model_runner.hpp"
 
 #include <array>
 
@@ -14,16 +13,13 @@ using json = nlohmann::json;
 
 
 typedef struct _WhisperFeature {
-    std::vector<float> mel;
     std::array<int, 4> sot_seq;
 
-    std::vector<float> n_layer_cross_k;
-    std::vector<float> n_layer_cross_v;
-
-    std::vector<float> decoder_main_logits;
-    std::vector<float> mask;
-    std::vector<float> n_layer_self_k_cache;
-    std::vector<float> n_layer_self_v_cache;
+    std::vector<int> mask;              // [n_text_ctx,]
+    std::vector<float> self_k_cache;    // [n_text_layer, n_text_ctx, n_text_state]
+    std::vector<float> self_v_cache;    // [n_text_layer, n_text_ctx, n_text_state]
+    std::vector<float> this_self_k;     // [n_text_layer, 1, n_text_state]
+    std::vector<float> this_self_v;     // [n_text_layer, 1, n_text_state]
 
     std::vector<float> logits;
 } WhisperFeature;
@@ -41,21 +37,22 @@ public:
 
     bool load_models(const std::string& model_root);
 
-    std::vector<float> preprocess(std::vector<float>& audio_data);
+    std::vector<float> preprocess(std::vector<float>& audio_data, int n_mels);
 
     bool run(std::vector<float>& audio_data, std::string& result);
 
 private:
     int get_lang_token(const std::string& lang);
-    void supress_tokens(std::vector<float>& logits, bool is_initial);
+    void causal_mask_1d(int offset);
+    void dma_cross_kv();
+    int run_decoder(int token, int offset);
 
 private:
     std::string m_model_type;
     std::string m_lang;    
 
-    Encoder m_encoder;
-    DecoderMain m_decoder_main;
-    DecoderLoop m_decoder_loop;
+    AxModelRunner m_encoder;
+    AxModelRunner m_decoder;
     std::vector<float> m_pe;
     std::vector<std::string> m_token_tables;
     json m_config;

@@ -8,8 +8,7 @@
  *
  **************************************************************************************************/
 
-#ifndef SKEL_LOGGER_H
-#define SKEL_LOGGER_H
+#pragma once
 
 #include "ax_global_type.h"
 #include "ax_sys_log.h"
@@ -21,29 +20,20 @@ extern "C"
 {
 #endif
 
-//#define SKEL_LOG_TAG "SKEL"
-//
-//#define ALOGE(fmt, ...) AX_LOG_ERR_EX(SKEL_LOG_TAG, AX_ID_SKEL, fmt, ##__VA_ARGS__)
-//#define ALOGW(fmt, ...) AX_LOG_WARN_EX(SKEL_LOG_TAG, AX_ID_SKEL, fmt, ##__VA_ARGS__)
-//#define ALOGI(fmt, ...) AX_LOG_INFO_EX(SKEL_LOG_TAG, AX_ID_SKEL, fmt, ##__VA_ARGS__)
-//#define ALOGD(fmt, ...) AX_LOG_DBG_EX(SKEL_LOG_TAG, AX_ID_SKEL, fmt, ##__VA_ARGS__)
-//#define ALOGN(fmt, ...) AX_LOG_NOTICE_EX(SKEL_LOG_TAG, AX_ID_SKEL, fmt, ##__VA_ARGS__)
-
-
 typedef enum {
-    SKEL_LOG_MIN         = -1,
-    SKEL_LOG_EMERGENCY   = 0,
-    SKEL_LOG_ALERT       = 1,
-    SKEL_LOG_CRITICAL    = 2,
-    SKEL_LOG_ERROR       = 3,
-    SKEL_LOG_WARN        = 4,
-    SKEL_LOG_NOTICE      = 5,
-    SKEL_LOG_INFO        = 6,
-    SKEL_LOG_DEBUG       = 7,
-    SKEL_LOG_MAX
-} SKEL_LOG_LEVEL_E;
+    AX_WHISPER_LOG_MIN         = -1,
+    AX_WHISPER_LOG_EMERGENCY   = 0,
+    AX_WHISPER_LOG_ALERT       = 1,
+    AX_WHISPER_LOG_CRITICAL    = 2,
+    AX_WHISPER_LOG_ERROR       = 3,
+    AX_WHISPER_LOG_WARN        = 4,
+    AX_WHISPER_LOG_NOTICE      = 5,
+    AX_WHISPER_LOG_INFO        = 6,
+    AX_WHISPER_LOG_DEBUG       = 7,
+    AX_WHISPER_LOG_MAX
+} AX_WHISPER_LOG_LEVEL_E;
 
-static SKEL_LOG_LEVEL_E log_level = SKEL_LOG_DEBUG;
+static AX_WHISPER_LOG_LEVEL_E log_level = AX_WHISPER_LOG_INFO;
 
 #if 1
 #define MACRO_BLACK "\033[1;30;30m"
@@ -66,17 +56,15 @@ static SKEL_LOG_LEVEL_E log_level = SKEL_LOG_DEBUG;
 #endif
 
 #define ALOGE(fmt, ...) printf(MACRO_RED "[E][%32s][%4d]: " fmt MACRO_END "\n", __FUNCTION__, __LINE__, ##__VA_ARGS__)
-#define ALOGW(fmt, ...) if (log_level >= SKEL_LOG_WARN) \
+#define ALOGW(fmt, ...) if (log_level >= AX_WHISPER_LOG_WARN) \
     printf(MACRO_YELLOW "[W][%32s][%4d]: " fmt MACRO_END "\n", __FUNCTION__, __LINE__, ##__VA_ARGS__)
-#define ALOGI(fmt, ...) if (log_level >= SKEL_LOG_INFO) \
+#define ALOGI(fmt, ...) if (log_level >= AX_WHISPER_LOG_INFO) \
     printf(MACRO_GREEN "[I][%32s][%4d]: " fmt MACRO_END "\n", __FUNCTION__, __LINE__, ##__VA_ARGS__)
-#define ALOGD(fmt, ...) if (log_level >= SKEL_LOG_DEBUG) \
+#define ALOGD(fmt, ...) if (log_level >= AX_WHISPER_LOG_DEBUG) \
     printf(MACRO_WHITE "[D][%32s][%4d]: " fmt MACRO_END "\n", __FUNCTION__, __LINE__, ##__VA_ARGS__)
-#define ALOGN(fmt, ...) if (log_level >= SKEL_LOG_NOTICE) \
+#define ALOGN(fmt, ...) if (log_level >= AX_WHISPER_LOG_NOTICE) \
     printf(MACRO_PURPLE "[N][%32s][%4d]: " fmt MACRO_END "\n", __FUNCTION__, __LINE__, ##__VA_ARGS__)
 
 #ifdef __cplusplus
 }
 #endif
-
-#endif //SKEL_LOGGER_H
