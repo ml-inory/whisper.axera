@@ -50,70 +50,32 @@ pip3 install -r requirements.txt
 
 登陆开发板后
 
-输入命令
+##### CLI demo
 
 ```
 cd python  
-python3 main.py --model_type small --model_path ../models --wav ../demo.wav --language zh
+python3 whisper_cli.py -t tiny --model_path ../models-ax650 -w ../demo.wav --language zh
 ```
 
 输出结果
 
 ```
-root@ax650:/mnt/qtang/whisper.axera/python# python3 main.py --wav ../demo.wav --model_type small --model_path ../models/ --language zh
+(whisper) root@ax650:/mnt/data/Github/whisper.axera/python# python whisper_cli.py -t tiny -w ../demo.wav
 [INFO] Available providers:  ['AxEngineExecutionProvider']
-wav: ../demo.wav
-model_type: small
-model_path: ../models/
-language: zh
+{'wav': '../demo.wav', 'model_type': 'tiny', 'model_path': '../models-ax650', 'language': 'zh', 'task': 'transcribe'}
 [INFO] Using provider: AxEngineExecutionProvider
 [INFO] Chip type: ChipType.MC50
 [INFO] VNPU type: VNPUType.DISABLED
-[INFO] Engine version: 2.10.1s
+[INFO] Engine version: 2.12.0s
 [INFO] Model type: 2 (triple core)
-[INFO] Compiler version: 3.2-patch1 117f5fd4
+[INFO] Compiler version: 5.0 76f70fdc
 [INFO] Using provider: AxEngineExecutionProvider
 [INFO] Model type: 2 (triple core)
-[INFO] Compiler version: 3.2-patch1 117f5fd4
-[INFO] Using provider: AxEngineExecutionProvider
-[INFO] Model type: 2 (triple core)
-[INFO] Compiler version: 3.2-patch1 117f5fd4
-Load models take 2322.563409805298ms
-Preprocess wav take 6971.68493270874ms
-Run encoder take 211.52877807617188ms
-Run decoder_main take 79.00094985961914ms
-First token: 17556
-Run decoder_loop take 101.91774368286133ms
-Iter 0   Token: 20844
-Run decoder_loop take 60.30416488647461ms
-Iter 1   Token: 7781
-Run decoder_loop take 60.22000312805176ms
-Iter 2   Token: 20204
-Run decoder_loop take 60.23716926574707ms
-Iter 3   Token: 28455
-Run decoder_loop take 60.214996337890625ms
-Iter 4   Token: 31962
-Run decoder_loop take 60.17565727233887ms
-Iter 5   Token: 6336
-Run decoder_loop take 60.94002723693848ms
-Iter 6   Token: 254
-Run decoder_loop take 60.71639060974121ms
-Iter 7   Token: 2930
-Run decoder_loop take 60.225725173950195ms
-Iter 8   Token: 236
-Run decoder_loop take 60.167789459228516ms
-Iter 9   Token: 36135
-Run decoder_loop take 60.29987335205078ms
-Iter 10          Token: 15868
-Run decoder_loop take 61.163902282714844ms
-Iter 11          Token: 252
-Run decoder_loop take 60.273170471191406ms
-Iter 12          Token: 1546
-Run decoder_loop take 60.23144721984863ms
-Iter 13          Token: 46514
-Run decoder_loop take 60.31966209411621ms
-Iter 14          Token: 50257
-Result: 甚至出现交易几乎停滞的情况
+[INFO] Compiler version: 5.0 76f70fdc
+ASR result:
+擅职出现交易几乎停止的情况
+RTF: 0.11406774537746188
+
 ```
 
 运行参数说明:  
@@ -123,6 +85,15 @@ Result: 甚至出现交易几乎停滞的情况
 | --model_type/-t | 模型类型, tiny/base/small | |
 | --model_path/-p | 模型所在目录 | ../models |
 | --language/-l | 识别语言 | zh |
+
+##### 服务端
+
+```
+(whisper) root@ax650:/mnt/data/Github/whisper.axera/python# python whisper_svr.py
+[INFO] Available providers:  ['AxEngineExecutionProvider']
+Server started at http://0.0.0.0:8000
+
+```
 
 ### 示例
 

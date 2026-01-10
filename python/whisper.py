@@ -189,19 +189,15 @@ class Whisper:
         return out
 
     def get_self_cache(self) -> List[np.ndarray]:
-        self_cache = []
         batch_size = 1
-        for i in range(self.config.n_text_layer):
-            k = np.zeros(
-                (batch_size, self.config.n_text_ctx, self.config.n_text_state),
-                dtype=np.float32,
-            )
-            v = np.zeros(
-                (batch_size, self.config.n_text_ctx, self.config.n_text_state),
-                dtype=np.float32,
-            )
-            self_cache.extend([k, v])
-        return self_cache
+
+        self_k = np.zeros(
+            (self.config.n_text_layer, batch_size, self.config.n_text_ctx, self.config.n_text_state), dtype=np.float32
+        )
+        self_v = np.zeros(
+            (self.config.n_text_layer, batch_size, self.config.n_text_ctx, self.config.n_text_state), dtype=np.float32
+        )
+        return self_k, self_v
 
     def causal_mask_1d(self, n: int, L: int):
         """
@@ -220,23 +216,23 @@ class Whisper:
 
         mel = self.compute_feature(audio)
 
-        cross_kv = self.run_encoder(mel)
+        cross_k, cross_v = self.run_encoder(mel)
 
-        self_kv = self.get_self_cache()
+        self_k, self_v = self.get_self_cache()
 
         offset = np.array([0], dtype=np.int32)
         for t in self.config.sot_sequence:
             token = np.array([[t]], dtype=np.int32)  # sot
             mask = self.causal_mask_1d(offset.item(), self.config.n_text_ctx)
 
-            out = self.run_decoder([token] + self_kv + cross_kv + [offset, mask])
+            logits, this_self_k, this_self_v = self.run_decoder([token] + [self_k, self_v] + [cross_k, cross_v] + [offset, mask])
 
-            for i in range(1, len(out)):
-                self_kv[i - 1][:, offset.item() : offset.item() + 1, :] = out[i]
+            self_k[:, :, offset.item() : offset.item() + 1, :] = this_self_k
+            self_v[:, :, offset.item() : offset.item() + 1, :] = this_self_v
 
             offset += 1
 
-        idx = out[0][0, 0].argmax()
+        idx = logits[0, 0].argmax()
 
         eot = self.config.eot
 
@@ -248,13 +244,13 @@ class Whisper:
 
             mask = self.causal_mask_1d(offset.item(), self.config.n_text_ctx)
 
-            out = self.run_decoder([token] + self_kv + cross_kv + [offset, mask])
+            logits, this_self_k, this_self_v = self.run_decoder([token] + [self_k, self_v] + [cross_k, cross_v] + [offset, mask])
 
-            for i in range(1, len(out)):
-                self_kv[i - 1][:, offset.item() : offset.item() + 1, :] = out[i]
+            self_k[:, :, offset.item() : offset.item() + 1, :] = this_self_k
+            self_v[:, :, offset.item() : offset.item() + 1, :] = this_self_v
 
             offset += 1
-            idx = out[0][0, 0].argmax()
+            idx = logits[0, 0].argmax()
 
         # print(ans)
 

@@ -128,17 +128,15 @@ class OnnxModel:
         return out
 
     def get_self_cache(self) -> List[np.ndarray]:
-        self_cache = []
         batch_size = 1
-        for i in range(self.n_text_layer):
-            k = np.zeros(
-                (batch_size, self.n_text_ctx, self.n_text_state), dtype=np.float32
-            )
-            v = np.zeros(
-                (batch_size, self.n_text_ctx, self.n_text_state), dtype=np.float32
-            )
-            self_cache.extend([k, v])
-        return self_cache
+
+        self_k = np.zeros(
+            (self.n_text_layer, batch_size, self.n_text_ctx, self.n_text_state), dtype=np.float32
+        )
+        self_v = np.zeros(
+            (self.n_text_layer, batch_size, self.n_text_ctx, self.n_text_state), dtype=np.float32
+        )
+        return self_k, self_v
 
 
 def load_tokens(filename):
@@ -188,9 +186,9 @@ def forward(model_type: str, model: OnnxModel, sound_file: str, lang: str, token
     os.makedirs(f"calibrations_{model_type}/encoder/mel", exist_ok=True)
     np.save(f"./calibrations_{model_type}/encoder/mel/{name}.npy", mel)
 
-    cross_kv = model.run_encoder(mel)
+    cross_k, cross_v = model.run_encoder(mel)
     
-    self_kv = model.get_self_cache()
+    self_k, self_v = model.get_self_cache()
 
     offset = np.array([0], dtype=np.int32)
     for t in model.sot_sequence:
@@ -200,58 +198,50 @@ def forward(model_type: str, model: OnnxModel, sound_file: str, lang: str, token
         os.makedirs(f"calibrations_{model_type}/decoder/tokens", exist_ok=True)
         os.makedirs(f"calibrations_{model_type}/decoder/offset", exist_ok=True)
         os.makedirs(f"calibrations_{model_type}/decoder/mask", exist_ok=True)
+        os.makedirs(f"calibrations_{model_type}/decoder/self_k", exist_ok=True)
+        os.makedirs(f"calibrations_{model_type}/decoder/self_v", exist_ok=True)
+        os.makedirs(f"calibrations_{model_type}/decoder/cross_k", exist_ok=True)
+        os.makedirs(f"calibrations_{model_type}/decoder/cross_v", exist_ok=True)
 
         np.save(f"calibrations_{model_type}/decoder/tokens/{name}_{offset.item()}.npy", token)
         np.save(f"calibrations_{model_type}/decoder/offset/{name}_{offset.item()}.npy", offset)
         np.save(f"calibrations_{model_type}/decoder/mask/{name}_{offset.item()}.npy", mask)
+        np.save(f"calibrations_{model_type}/decoder/self_k/{name}_{offset.item()}.npy", self_k)
+        np.save(f"calibrations_{model_type}/decoder/self_v/{name}_{offset.item()}.npy", self_v)
+        np.save(f"calibrations_{model_type}/decoder/cross_k/{name}_{offset.item()}.npy", cross_k)
+        np.save(f"calibrations_{model_type}/decoder/cross_v/{name}_{offset.item()}.npy", cross_v)
 
-        for i in range(0, len(self_kv), 2):
-            os.makedirs(f"calibrations_{model_type}/decoder/self_k_{i // 2}", exist_ok=True)
-            os.makedirs(f"calibrations_{model_type}/decoder/self_v_{i // 2}", exist_ok=True)
 
-            np.save(f"calibrations_{model_type}/decoder/self_k_{i // 2}/{name}_{offset.item()}.npy", self_kv[i])
-            np.save(f"calibrations_{model_type}/decoder/self_v_{i // 2}/{name}_{offset.item()}.npy", self_kv[i + 1])
+        logits, this_self_k, this_self_v = model.run_decoder([token] + [self_k, self_v] + [cross_k, cross_v] + [offset, mask])
 
-        for i in range(0, len(cross_kv), 2):
-            os.makedirs(f"calibrations_{model_type}/decoder/cross_k_{i // 2}", exist_ok=True)
-            os.makedirs(f"calibrations_{model_type}/decoder/cross_v_{i // 2}", exist_ok=True)
-
-            np.save(f"calibrations_{model_type}/decoder/cross_k_{i // 2}/{name}_{offset.item()}.npy", cross_kv[i])
-            np.save(f"calibrations_{model_type}/decoder/cross_v_{i // 2}/{name}_{offset.item()}.npy", cross_kv[i + 1])
-
-        out = model.run_decoder([token] + self_kv + cross_kv + [offset, mask])
-
-        for i in range(1, len(out)):
-            self_kv[i - 1][:, offset.item() : offset.item() + 1, :] = out[i]
+        self_k[:, :, offset.item() : offset.item() + 1, :] = this_self_k
+        self_v[:, :, offset.item() : offset.item() + 1, :] = this_self_v
 
         offset += 1
 
-    idx = out[0][0, 0].argmax()
+    idx = logits[0, 0].argmax()
 
     ans = []
 
     while idx != model.eot and offset.item() < 200:
         ans.append(idx)
         token = np.array([[idx]], dtype=np.int32)  # no_timestamps
-        for i in range(1, len(out)):
-            self_kv[i - 1][:, offset.item() : offset.item() + 1, :] = out[i]
+
+        self_k[:, :, offset.item() : offset.item() + 1, :] = this_self_k
+        self_v[:, :, offset.item() : offset.item() + 1, :] = this_self_v
 
         mask = causal_mask_1d(offset.item(), model.n_text_ctx).numpy()
 
         np.save(f"calibrations_{model_type}/decoder/tokens/{name}_{offset.item()}.npy", token)
         np.save(f"calibrations_{model_type}/decoder/offset/{name}_{offset.item()}.npy", offset)
         np.save(f"calibrations_{model_type}/decoder/mask/{name}_{offset.item()}.npy", mask)
+        np.save(f"calibrations_{model_type}/decoder/self_k/{name}_{offset.item()}.npy", self_k)
+        np.save(f"calibrations_{model_type}/decoder/self_v/{name}_{offset.item()}.npy", self_v)
+        np.save(f"calibrations_{model_type}/decoder/cross_k/{name}_{offset.item()}.npy", cross_k)
+        np.save(f"calibrations_{model_type}/decoder/cross_v/{name}_{offset.item()}.npy", cross_v)
 
-        for i in range(0, len(self_kv), 2):
-            np.save(f"calibrations_{model_type}/decoder/self_k_{i // 2}/{name}_{offset.item()}.npy", self_kv[i])
-            np.save(f"calibrations_{model_type}/decoder/self_v_{i // 2}/{name}_{offset.item()}.npy", self_kv[i + 1])
-
-        for i in range(0, len(cross_kv), 2):
-            np.save(f"calibrations_{model_type}/decoder/cross_k_{i // 2}/{name}_{offset.item()}.npy", cross_kv[i])
-            np.save(f"calibrations_{model_type}/decoder/cross_v_{i // 2}/{name}_{offset.item()}.npy", cross_kv[i + 1])
-
-        out = model.run_decoder([token] + self_kv + cross_kv + [offset, mask])
-        idx = out[0][0, 0].argmax()
+        logits, this_self_k, this_self_v = model.run_decoder([token] + [self_k, self_v] + [cross_k, cross_v] + [offset, mask])
+        idx = logits[0, 0].argmax()
 
         offset += 1
 
@@ -304,14 +294,12 @@ def main():
                 f"calibrations_{model_type}/decoder/tokens",
                 f"calibrations_{model_type}/decoder/mask",
                 f"calibrations_{model_type}/decoder/offset", 
+                f"calibrations_{model_type}/decoder/self_k",
+                f"calibrations_{model_type}/decoder/self_v",
+                f"calibrations_{model_type}/decoder/cross_k",
+                f"calibrations_{model_type}/decoder/cross_v"
     ]
-    for i in range(model.n_text_layer):
-        tar_dirs.append(f"calibrations_{model_type}/decoder/self_k_{i}")
-        tar_dirs.append(f"calibrations_{model_type}/decoder/self_v_{i}")
 
-        tar_dirs.append(f"calibrations_{model_type}/decoder/cross_k_{i}")
-        tar_dirs.append(f"calibrations_{model_type}/decoder/cross_v_{i}")
-    
     for td in tar_dirs:
         tar_filename = os.path.join(td, "..", os.path.basename(td) + ".tar.gz")
         tar = tarfile.open(tar_filename, "w:gz")

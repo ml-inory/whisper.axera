@@ -18,7 +18,8 @@ typedef struct _WhisperFeature {
     std::vector<int> mask;              // [n_text_ctx,]
     std::vector<float> self_k_cache;    // [n_text_layer, n_text_ctx, n_text_state]
     std::vector<float> self_v_cache;    // [n_text_layer, n_text_ctx, n_text_state]
-    std::vector<float> this_self_kv;    // [1, 1, n_text_state]
+    std::vector<float> this_self_k;     // [n_text_layer, 1, n_text_state]
+    std::vector<float> this_self_v;     // [n_text_layer, 1, n_text_state]
 
     std::vector<float> logits;
 } WhisperFeature;

@@ -140,7 +140,8 @@ bool Whisper::load_models(const std::string& model_root) {
         m_feature.mask.resize(n_text_ctx);
         m_feature.self_k_cache.resize(n_text_layer * n_text_ctx * n_text_state);
         m_feature.self_v_cache.resize(n_text_layer * n_text_ctx * n_text_state);
-        m_feature.this_self_kv.resize(n_text_state);
+        m_feature.this_self_k.resize(n_text_layer * n_text_state);
+        m_feature.this_self_v.resize(n_text_layer * n_text_state);
         m_feature.logits.resize(vocab_size);
     }
     
@@ -192,6 +193,9 @@ bool Whisper::run(std::vector<float>& audio_data, std::string& result) {
         ALOGE("encoder run failed! ret=0x%x", ret);
         return false;
     }
+
+    // copy cross_kv once
+    dma_cross_kv();
 
     // init mask
     std::fill(m_feature.mask.begin(), m_feature.mask.end(), 1);
@@ -255,14 +259,14 @@ void Whisper::causal_mask_1d(int offset) {
 
 void Whisper::dma_cross_kv() {
     // encoder output:
-    // cross_k_0, cross_v_0, cross_k_1, cross_v_1, ...
+    // cross_k, cross_v, ...
 
     // decoder input:
-    // tokens, self_k_0, self_v_0, ..., cross_k_0, cross_v_0, ..., offset, mask
+    // tokens, self_k, self_v, cross_k, cross_v, offset, mask
 
     const int n_text_layer = m_config["n_text_layer"];
-    int cross_kv_num = 2 * n_text_layer;
-    int decoder_start_index = 1 + 2 * n_text_layer;
+    int cross_kv_num = 2;
+    int decoder_start_index = 3;
 
     for (int i = 0; i < cross_kv_num; i++) {
 #if defined(CHIP_AX650)      
@@ -285,30 +289,25 @@ void Whisper::dma_cross_kv() {
 
 int Whisper::run_decoder(int token, int offset) {
     // decoder input
-    // token + self_kv + cross_kv + offset + mask
+    // token + self_k + self_v + cross_k + cross_v + offset + mask
 
     // decoder output
-    // logits + this_self_kv
+    // logits + this_self_k + this_self_v
     const int n_text_layer = m_config["n_text_layer"];
     const int n_text_ctx = m_config["n_text_ctx"];
     const int n_text_state = m_config["n_text_state"];
     const int self_kv_index = 1;
-    const int offset_index = 1 + 2 * n_text_layer + 2 * n_text_layer;
+    const int offset_index = 1 + 2 + 2;
     const int mask_index = offset_index + 1;
     const int this_kv_index = 1;
 
     causal_mask_1d(offset);
 
     m_decoder.set_input(0, &token);
-    for (int i = 0; i < n_text_layer; i++) {
-        int self_k_index = self_kv_index + i * 2;
-        int self_v_index = self_kv_index + i * 2 + 1;
+    m_decoder.set_input(1, m_feature.self_k_cache.data());
+    m_decoder.set_input(2, m_feature.self_v_cache.data());
 
-        m_decoder.set_input(self_k_index, m_feature.self_k_cache.data() + i * n_text_ctx * n_text_state);
-        m_decoder.set_input(self_v_index, m_feature.self_v_cache.data() + i * n_text_ctx * n_text_state);
-    }
-
-    dma_cross_kv();
+    // dma_cross_kv();
 
     m_decoder.set_input(offset_index, &offset);
     m_decoder.set_input(mask_index, m_feature.mask.data());
@@ -320,21 +319,28 @@ int Whisper::run_decoder(int token, int offset) {
     }
 
     // Update kv cache
-    for (int i = 0; i < n_text_layer; i++) {
-        int k_output_index = 1 + i * 2;
-        int v_output_index = 2 + i * 2;
-        
-        float* k_cache_ptr = m_feature.self_k_cache.data() + 
-                           i * n_text_ctx * n_text_state + 
-                           offset * n_text_state;
-        m_decoder.get_output(k_output_index, k_cache_ptr);
-        
-        float* v_cache_ptr = m_feature.self_v_cache.data() + 
-                           i * n_text_ctx * n_text_state + 
-                           offset * n_text_state;
-        m_decoder.get_output(v_output_index, v_cache_ptr);
-    }
+    int k_output_index = 1;
+    int v_output_index = 2;
 
+    m_decoder.get_output(k_output_index, m_feature.this_self_k.data());
+    m_decoder.get_output(v_output_index, m_feature.this_self_v.data());
+    
+    for (int i = 0; i < n_text_layer; i++) {
+        float* k_dst_ptr = m_feature.self_k_cache.data() + 
+                        i * n_text_ctx * n_text_state + 
+                        offset * n_text_state;
+        float* k_src_ptr = m_feature.this_self_k.data() +
+                        i * n_text_state;
+        memcpy(k_dst_ptr, k_src_ptr, sizeof(float) * n_text_state);
+        
+        float* v_dst_ptr = m_feature.self_v_cache.data() + 
+                        i * n_text_ctx * n_text_state + 
+                        offset * n_text_state;
+        float* v_src_ptr = m_feature.this_self_v.data() +
+                        i * n_text_state;
+        memcpy(v_dst_ptr, v_src_ptr, sizeof(float) * n_text_state);
+    }
+    
     m_decoder.get_output(0, m_feature.logits.data());
     return argmax(m_feature.logits);
 }

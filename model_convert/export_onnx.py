@@ -202,14 +202,15 @@ class AudioEncoderTensorCache(nn.Module):
         n_layer_cross_k_list = []
         n_layer_cross_v_list = []
 
-        cross_kv_pair = []
         for block in self.textDecoder.blocks:
             k = block.cross_attn.key(audio_features)  # (batch_size, 1500, 384)
             v = block.cross_attn.value(audio_features)  # (batch_size, 1500, 384)
 
-            cross_kv_pair.append((k, v))
+            n_layer_cross_k_list.append(k)
+            n_layer_cross_v_list.append(v)
 
-        return cross_kv_pair
+        return torch.stack(n_layer_cross_k_list, dim=0), \
+            torch.stack(n_layer_cross_v_list, dim=0)
 
 
 class MultiHeadAttentionCross(nn.Module):
@@ -311,8 +312,10 @@ class TextDecoderTensorCache(nn.Module):
     def forward(
         self,
         tokens: Tensor,
-        self_kv_pair: List[Tuple[Tensor, Tensor]],
-        cross_kv_pair: List[Tuple[Tensor, Tensor]],
+        self_k: Tensor,
+        self_v: Tensor,
+        cross_k: Tensor,
+        cross_v: Tensor,
         offset: Tensor,
         mask: Tensor,
     ) -> Tuple[Tensor, List[Tuple[Tensor, Tensor]]]:
@@ -321,6 +324,8 @@ class TextDecoderTensorCache(nn.Module):
         self_kv_pair:
             - [i][0]: layer_i_self_k_cache, (batch_size, 448, dim)
             - [i][1]: layer_i_self_v_cache, (batch_size, 448, dim)
+        self_k self_v: (n_text_layer, batch_size, n_text_ctx, n_text_state)
+        cross_k cross_v: (n_audio_layer, batch_size, n_audio_ctx, n_audio_state)
         Returns:
           - logits
           - this_self_kv_pair
@@ -331,19 +336,20 @@ class TextDecoderTensorCache(nn.Module):
         ) + self.textDecoder.positional_embedding[offset.to(torch.int64)].unsqueeze(0)
 
         i = 0
-        this_self_kv_pair = []
+        this_self_k = []
+        this_self_v = []
         for block in self.blocks:
-            self_k_cache = self_kv_pair[i][0]
-            self_v_cache = self_kv_pair[i][1]
+            self_k_cache = self_k[i]
+            self_v_cache = self_v[i]
 
-            x, self_k, self_v = block(
+            x, update_self_k, update_self_v = block(
                 x,
                 #  self_k_cache=self_k_cache[:, : offset + 1],
                 #  self_v_cache=self_v_cache[:, : offset + 1],
                 self_k_cache=self_k_cache,
                 self_v_cache=self_v_cache,
-                cross_k=cross_kv_pair[i][0],
-                cross_v=cross_kv_pair[i][1],
+                cross_k=cross_k[i],
+                cross_v=cross_v[i],
                 offset=offset,
                 #  mask=self.textDecoder.mask,
                 mask=mask,
@@ -351,8 +357,9 @@ class TextDecoderTensorCache(nn.Module):
             #  self_k_cache[:, : offset + 1] = updated_self_k_cache
             #  self_v_cache[:, : offset + 1] = updated_self_v_cache
             #  updated_self_kv_pair.append((self_k_cache, self_v_cache))
-            this_self_kv_pair.append((self_k, self_v))
-
+            this_self_k.append(update_self_k)
+            this_self_v.append(update_self_v)
+ 
             i += 1
 
         x = self.textDecoder.ln(x)
@@ -377,7 +384,7 @@ class TextDecoderTensorCache(nn.Module):
                 .float()
             )
 
-        return logits, this_self_kv_pair
+        return logits, torch.stack(this_self_k, dim=0), torch.stack(this_self_v, dim=0)
 
 
 # ref: https://github.com/ggerganov/whisper.cpp/blob/master/models/convert-pt-to-ggml.py#L232
@@ -554,18 +561,13 @@ def main():
 
     encoder = AudioEncoderTensorCache(model.encoder, model.decoder)
 
-    cross_kv_pair = encoder(mel)
-    assert len(cross_kv_pair) == model.dims.n_text_layer, (
-        len(cross_kv_pair),
-        model.dims.n_text_layer,
+    cross_k, cross_v = encoder(mel)
+    assert cross_k.shape[0] == model.dims.n_audio_layer, (
+        cross_k.shape[0],
+        model.dims.n_audio_layer,
     )
 
-    output_names = []
-    for i in range(model.dims.n_text_layer):
-        k = f"cross_k_{i}"
-        v = f"cross_v_{i}"
-        output_names.append(k)
-        output_names.append(v)
+    output_names = ["cross_k", "cross_v"]
 
     export_sig = inspect.signature(torch.onnx.export)
 
@@ -623,65 +625,48 @@ def main():
     }
     print(f"encoder_meta_data: {encoder_meta_data}")
     add_meta_data(filename=encoder_filename, meta_data=encoder_meta_data)
-    with open(f"{name}/{name}_config.json", "w") as f:
+    with open(f"{name}_config.json", "w") as f:
         json.dump(encoder_meta_data, f, indent=4)
 
     tokens = torch.tensor([[tokenizer.sot]], dtype=torch.int32)
     decoder = TextDecoderTensorCache(model.decoder, model.dims.n_text_ctx)
 
-    self_kv_pair = []
     batch_size = 1
-    for i in range(model.dims.n_text_layer):
-        k = torch.zeros(batch_size, model.dims.n_text_ctx, model.dims.n_text_state)
-        v = torch.zeros(batch_size, model.dims.n_text_ctx, model.dims.n_text_state)
-        self_kv_pair.append((k, v))
+    self_k = torch.zeros(model.dims.n_text_layer, batch_size, model.dims.n_text_ctx, model.dims.n_text_state)
+    self_v = torch.zeros(model.dims.n_text_layer, batch_size, model.dims.n_text_ctx, model.dims.n_text_state)
 
     offset = torch.zeros(1, dtype=torch.int32)
     mask = causal_mask_1d(offset.item(), model.dims.n_text_ctx)
 
-    logits, this_self_kv_pair = decoder(
+    logits, this_self_k, this_self_v = decoder(
         tokens,
-        self_kv_pair,
-        cross_kv_pair,
+        self_k,
+        self_v,
+        cross_k,
+        cross_v,
         offset,
         mask,
     )
 
     assert logits.shape == (batch_size, tokens.shape[1], model.dims.n_vocab)
-    assert len(this_self_kv_pair) == model.dims.n_text_layer, (
-        len(this_self_kv_pair),
+    assert self_k.shape[0] == model.dims.n_text_layer, (
+        self_k.shape[0] ,
         model.dims.n_text_layer,
     )
 
-    input_names = [f"tokens"]
-    for i in range(model.dims.n_text_layer):
-        k = f"self_k_{i}"
-        v = f"self_v_{i}"
-        input_names.append(k)
-        input_names.append(v)
+    input_names = [f"tokens", "self_k", "self_v", "cross_k", "cross_v", "offset", "mask"]
 
-    for i in range(model.dims.n_text_layer):
-        k = f"cross_k_{i}"
-        v = f"cross_v_{i}"
-        input_names.append(k)
-        input_names.append(v)
-    input_names.append(f"offset")
-    input_names.append(f"mask")
-
-    output_names = [f"logits"]
-    for i in range(model.dims.n_text_layer):
-        k = f"this_self_k_{i}"
-        v = f"this_self_v_{i}"
-        output_names.append(k)
-        output_names.append(v)
+    output_names = [f"logits", "this_self_k", "this_self_v"]
 
     decoder_filename = f"{name}-decoder.onnx"
     torch.onnx.export(
         decoder,
         (
             tokens,
-            self_kv_pair,
-            cross_kv_pair,
+            self_k,
+            self_v,
+            cross_k,
+            cross_v,
             offset,
             mask,
         ),
