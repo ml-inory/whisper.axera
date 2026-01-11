@@ -13,6 +13,8 @@ import soundfile as sf
 import numpy as np
 from typing import Tuple
 import whisper
+import base64
+
 
 def load_audio(filename: str) -> Tuple[np.ndarray, int]:
     data, sample_rate = sf.read(
@@ -61,6 +63,8 @@ assembly = load_audio('./assembly.mp3')
 assembly = assembly[: 16000 * 30]
 
 print(f"n_mels: {model.config.num_mel_bins}")
+print(f"new token <|transcribeprecise|> is {tokenizer.convert_tokens_to_ids('<|transcribeprecise|>')}")
+print(f"base64 of <|transcribeprecise|> is {base64.b64encode(b'<|transcribeprecise|>')}")
 
 with torch.no_grad():
     # p = processor([assembly], return_tensors='pt')

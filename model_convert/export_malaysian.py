@@ -30,16 +30,9 @@ from whisper.model import (
     ResidualAttentionBlock,
     TextDecoder,
 )
-from transformers.models.whisper import tokenization_whisper
 
-import safetensors.torch
 import json
-from transformers import (
-    WhisperFeatureExtractor, 
-    WhisperForConditionalGeneration, 
-    WhisperProcessor, 
-    WhisperTokenizerFast
-)
+import base64
 
 def causal_mask_1d(n: int, L: int, device=None, dtype=torch.int32):
     """
@@ -373,7 +366,7 @@ class TextDecoderTensorCache(nn.Module):
 
 
 # ref: https://github.com/ggerganov/whisper.cpp/blob/master/models/convert-pt-to-ggml.py#L232
-def convert_tokens(name, model):
+def convert_tokens(name, model, new_tokenizer=None, new_tokens=[]):
     whisper_dir = Path(whisper.__file__).parent
     multilingual = model.is_multilingual
     tokenizer = (
@@ -397,6 +390,11 @@ def convert_tokens(name, model):
             for token, rank in (line.split() for line in contents.splitlines() if line)
         }
 
+        if new_tokenizer is not None:
+            for t in new_tokens:
+                b64_str = base64.b64encode(t.encode("utf-8")).decode()
+                tokens[b64_str] = new_tokenizer.convert_tokens_to_ids(t)
+
     with open(f"{name}-tokens.txt", "w") as f:
         for t, i in tokens.items():
             f.write(f"{t} {i}\n")
@@ -410,10 +408,15 @@ def main():
     dims = whisper.load_model(name).dims
     dims.n_vocab += 1
     model = whisper.model.Whisper(dims)
+
+    # Use convert_hf_to_openai.py to get pt
     model.load_state_dict(torch.load("whisper_malaysian.pt"), strict=False)
     dims = model.dims
 
     # write tokens
+    # hf_tokenizer = WhisperTokenizerFast.from_pretrained(
+    #     'mesolitica/Malaysian-whisper-large-v3-turbo-v3'
+    # )
     convert_tokens(name, model)
 
     tokenizer = whisper.tokenizer.get_tokenizer(
